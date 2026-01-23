@@ -728,12 +728,11 @@ class PatchTrainer:
 
             pixAcc, meanIoU = self.metric.get()
             avg_attack = cum_attack_loss / max(1, self.iters_per_epoch)
-            self.log.info("-"*100)
-            self.log.info(
+            # Emit epoch meter at WARNING level so it shows under minimal logging
+            self.log.warning(
                 f"Epoch {ep}/{end_epoch} | {stage} | "
                 f"Avg AttackLoss: {avg_attack:.4f} | Avg mIoU: {meanIoU:.4f} | Avg pixAcc: {pixAcc:.4f}"
             )
-            self.log.info("-"*100)
             IoU_over_epochs.append(self.metric.get(full=True))
 
         return self.get_patch().detach(), np.array(IoU_over_epochs)
