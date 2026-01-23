@@ -108,83 +108,89 @@ class BDD100K(BaseDataset):
     def _auto_discover_files(self):
         """
         Auto-discover image and label files when list file is not available.
-        Scans root/images/{split}/ and root/labels/{split}/ directories.
-        Handles multiple BDD100K label naming patterns.
+        Handles BDD100K seg structure: root/images/{split}/ and root/labels/{split}/
         """
         # Extract split name from list_path (e.g., 'train.txt' -> 'train')
         split = os.path.splitext(os.path.basename(self.list_path))[0]
         
+        # BDD100K seg structure: bdd100k_seg/bdd100k/seg/images/{split}/ and labels/{split}/
         img_dir = os.path.join(self.root, 'images', split)
         label_dir = os.path.join(self.root, 'labels', split)
         
-        # Try alternative structures
-        if not os.path.exists(img_dir):
-            # Try: root/bdd100k_images/10k/{split}/
-            img_dir = os.path.join(self.root, 'bdd100k_images', '10k', split)
-            label_dir = os.path.join(self.root, 'bdd100k_labels_release', 'sem_seg', 'masks', split)
-        
-        if not os.path.exists(img_dir):
-            # Try: root/images/{split}/
-            img_dir = os.path.join(self.root, 'images', split)
-            # Try different label directories
-            for label_subdir in ['labels', 'sem_seg', 'semantic_masks', 'drivable_maps']:
-                test_label_dir = os.path.join(self.root, label_subdir, split)
-                if os.path.exists(test_label_dir):
-                    label_dir = test_label_dir
-                    break
-        
+        # Verify directories exist
         if not os.path.exists(img_dir):
             raise ValueError(f"Image directory not found: {img_dir}\n"
-                           f"Please check dataset structure or provide a list file.")
+                           f"Expected structure: {self.root}/images/{split}/\n"
+                           f"Please check dataset path or provide a list file.")
         
-        print(f"Scanning directory: {img_dir}")
+        if not os.path.exists(label_dir):
+            # Try color_labels as alternative
+            label_dir = os.path.join(self.root, 'color_labels', split)
+            if not os.path.exists(label_dir):
+                raise ValueError(f"Label directory not found.\n"
+                               f"Tried: {self.root}/labels/{split}/\n"
+                               f"Tried: {self.root}/color_labels/{split}/\n"
+                               f"Please check dataset structure.")
         
-        # Get all image files (BDD100K uses .jpg typically)
+        print(f"Images directory: {img_dir}")
+        print(f"Labels directory: {label_dir}")
+        
+        # Get all image files from images/{split}/ directory
         images = []
-        for root_dir, dirs, files in os.walk(img_dir):
-            for f in files:
-                if f.endswith('.jpg') or f.endswith('.png'):
-                    rel_path = os.path.relpath(os.path.join(root_dir, f), self.root)
-                    images.append(rel_path)
+        img_files = sorted(os.listdir(img_dir))
+        for f in img_files:
+            if f.endswith('.jpg') or f.endswith('.png'):
+                images.append(f)
         
-        images = sorted(images)
+        print(f"Found {len(images)} images in {split} split")
         
-        # Common BDD100K label naming patterns
-        label_patterns = [
-            (lambda x: x.replace('.jpg', '_drivable_id.png').replace('.png', '_drivable_id.png'), 'drivable_id'),
-            (lambda x: x.replace('.jpg', '_train_id.png').replace('.png', '_train_id.png'), 'train_id'),
-            (lambda x: x.replace('.jpg', '.png'), 'same_name'),
-            (lambda x: x.replace('.jpg', '_label.png').replace('.png', '_label.png'), 'label_suffix'),
-        ]
+        if len(images) == 0:
+            raise ValueError(f"No image files (.jpg or .png) found in {img_dir}")
         
+        # Match images with labels
+        # BDD100K labels typically have _train_id.png suffix
         img_list = []
-        for img_path in images:
-            # Try to find corresponding label
-            label_found = False
+        label_files = set(os.listdir(label_dir))
+        
+        for img_name in images:
+            img_base = os.path.splitext(img_name)[0]
             
-            for pattern_func, pattern_name in label_patterns:
-                label_path = pattern_func(img_path)
-                label_path = label_path.replace('images', 'labels')
-                label_path = label_path.replace('bdd100k_images', 'bdd100k_labels_release/sem_seg/masks')
-                
-                if os.path.exists(os.path.join(self.root, label_path)):
+            # Try different label naming patterns
+            possible_label_names = [
+                f"{img_base}_train_id.png",
+                f"{img_base}_label.png",
+                f"{img_base}.png",
+            ]
+            
+            label_found = False
+            for label_name in possible_label_names:
+                if label_name in label_files:
+                    img_path = os.path.join('images', split, img_name)
+                    label_path = os.path.join('labels', split, label_name)
+                    # Adjust if using color_labels
+                    if 'color_labels' in label_dir:
+                        label_path = os.path.join('color_labels', split, label_name)
+                    
                     img_list.append([img_path, label_path])
                     label_found = True
                     break
             
-            # If no label found, check if it's test set
             if not label_found:
                 if 'test' in split:
+                    # Test set may not have labels
+                    img_path = os.path.join('images', split, img_name)
                     img_list.append([img_path])
-                    label_found = True
-            
-            if not label_found:
-                print(f"Warning: Label not found for {img_path}, skipping...")
+                elif len(img_list) < 3:
+                    # Only warn for first few
+                    print(f"Warning: No label found for {img_name}")
         
-        print(f"Auto-discovered {len(img_list)} image-label pairs in '{split}' split")
+        print(f"Successfully matched {len(img_list)} image-label pairs")
         
         if len(img_list) == 0:
-            raise ValueError(f"No valid image-label pairs found in {img_dir}")
+            raise ValueError(f"No valid image-label pairs found.\n"
+                           f"Images: {img_dir} ({len(images)} files)\n"
+                           f"Labels: {label_dir} ({len(label_files)} files)\n"
+                           f"Check label naming pattern (expected: imagename_train_id.png)")
         
         return img_list
     
