@@ -3,13 +3,8 @@ import torch
 # Save the original sys.path
 original_sys_path = sys.path.copy()
 sys.path.append("/kaggle/working/adversarial-patch-transferability/")
-from pretrained_models.ICNet.icnet import ICNet
-from pretrained_models.BisNetV1.model import BiSeNetV1
-from pretrained_models.BisNetV2.model import BiSeNetV2
-from pretrained_models.PIDNet.model import PIDNet, get_pred_model
-from transformers import SegformerFeatureExtractor, SegformerForSemanticSegmentation
-import torch.nn.functional as F
 
+import torch.nn.functional as F
 
 # Restore original sys.path to avoid conflicts or shadowing
 sys.path = original_sys_path
@@ -23,6 +18,7 @@ class Models():
 
   def get(self):
     if 'pidnet' in self.config.model.name:
+      from pretrained_models.PIDNet.model import PIDNet, get_pred_model
       if '_s' in self.config.model.name:
         model = torch.load('/kaggle/input/pidnet_s_cityscapes_test/pytorch/default/1/PIDNet_S_Cityscapes_test.pt',map_location=self.device)
       if '_m' in self.config.model.name:
@@ -44,6 +40,8 @@ class Models():
       
 
     if 'bisenet' in self.config.model.name:
+      from pretrained_models.BisNetV1.model import BiSeNetV1
+      from pretrained_models.BisNetV2.model import BiSeNetV2
       if '_v1' in self.config.model.name:
         model = torch.load('/kaggle/input/bisenetv1/bisenetv1.pth',map_location=self.device)
         bisenet = BiSeNetV1(19,aux_mode = 'eval').to(self.device)
@@ -57,6 +55,7 @@ class Models():
 
 
     if 'icnet' in self.config.model.name:
+      from pretrained_models.ICNet.icnet import ICNet
       model = torch.load('/kaggle/input/icnet-wts/icnet_resnet50os8_cityscapes.pth',map_location=self.device)
       icnet = ICNet(nclass = 19).to(self.device)
       icnet.load_state_dict(model['model_state_dict'])
@@ -64,6 +63,7 @@ class Models():
       self.model.eval()
 
     if 'segformer' in self.config.model.name:
+      from transformers import SegformerFeatureExtractor, SegformerForSemanticSegmentation
       feature_extractor = SegformerFeatureExtractor.from_pretrained("/kaggle/input/segformer-weights/segformer.b0.1024x1024.city.160k.pth")
       segformer = SegformerForSemanticSegmentation.from_pretrained("/kaggle/input/segformer-weights/segformer.b0.1024x1024.city.160k.pth").to(self.device)
       self.model = segformer
