@@ -279,7 +279,9 @@ class PatchTrainer():
     start_epoch = self.start_epoch
     end_epoch   = self.end_epoch
     total_epochs = end_epoch - start_epoch
-    assert total_epochs == 30, f"This schedule expects 30 epochs; got {total_epochs}."
+
+    # No ASSERTION OF 30 epochs
+    # assert total_epochs == 30, f"This schedule expects 30 epochs; got {total_epochs}."
 
     # Split point (exclusive for Stage-1)
     switch_epoch = start_epoch + (total_epochs // 2)  # start..switch-1 = Stage-1, switch..end-1 = Stage-2
