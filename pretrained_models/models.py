@@ -1,4 +1,5 @@
 import sys
+import os
 import torch
 # Save the original sys.path
 original_sys_path = sys.path.copy()
@@ -63,9 +64,32 @@ class Models():
       self.model.eval()
 
     if 'segformer' in self.config.model.name:
-      from transformers import SegformerFeatureExtractor, SegformerForSemanticSegmentation
-      feature_extractor = SegformerFeatureExtractor.from_pretrained("/kaggle/input/segformer-weights/segformer.b0.1024x1024.city.160k.pth")
-      segformer = SegformerForSemanticSegmentation.from_pretrained("/kaggle/input/segformer-weights/segformer.b0.1024x1024.city.160k.pth").to(self.device)
+      from transformers import SegformerImageProcessor, SegformerForSemanticSegmentation
+
+      hf_name = getattr(self.config.model, 'hf_name', 'nvidia/segformer-b0-finetuned-cityscapes-1024-1024')
+      ckpt_dir = getattr(self.config.model, 'segformer_ckpt_dir', None)
+      ckpt_file = getattr(self.config.model, 'segformer_ckpt', None)
+
+      segformer = None
+
+      # 1) Prefer a local HF-style directory if provided (must contain config.json, etc.)
+      if ckpt_dir and os.path.isdir(ckpt_dir):
+        segformer = SegformerForSemanticSegmentation.from_pretrained(ckpt_dir)
+        SegformerImageProcessor.from_pretrained(ckpt_dir)  # load to validate; not stored
+
+      # 2) If a raw state_dict path is given, load weights on top of an HF backbone
+      if segformer is None and ckpt_file and os.path.isfile(ckpt_file):
+        segformer = SegformerForSemanticSegmentation.from_pretrained(hf_name)
+        state = torch.load(ckpt_file, map_location=self.device)
+        if isinstance(state, dict) and 'model' in state:
+          state = state['model']
+        segformer.load_state_dict(state, strict=False)
+
+      # 3) Fallback to the HF hub model name
+      if segformer is None:
+        segformer = SegformerForSemanticSegmentation.from_pretrained(hf_name)
+
+      segformer = segformer.to(self.device)
       self.model = segformer
       self.model.eval()
 
