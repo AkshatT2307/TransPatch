@@ -25,6 +25,15 @@ dataset:
   trainval: "trainval.txt"
   num_classes: 19
 
+other_dataset:
+  name: "bdd100k"
+  root: "/kaggle/input/solesensei_bdd100k/bdd100k_seg/bdd100k/seg/"
+  train: "train.txt"
+  test: "test.txt"
+  val: "val.txt"
+  trainval: "trainval.txt"
+  num_classes: 19
+
 ### 3. Patch
 patch:
   size: 200
