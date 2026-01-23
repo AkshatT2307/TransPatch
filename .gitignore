@@ -1,0 +1,63 @@
+# ===============================
+# Python cache / bytecode
+# ===============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# ===============================
+# Virtual environments
+# ===============================
+.venv/
+venv/
+env/
+conda/
+.conda/
+
+# ===============================
+# Model weights / checkpoints
+# ===============================
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.onnx
+*.h5
+*.hdf5
+*.safetensors
+
+# Common checkpoint directories
+checkpoints/
+weights/
+pretrained/
+models/
+
+# ===============================
+# Experiment outputs
+# ===============================
+runs/
+logs/
+wandb/
+mlruns/
+outputs/
+results/
+
+# ===============================
+# Jupyter
+# ===============================
+.ipynb_checkpoints/
+
+# ===============================
+# OS / Editor
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===============================
+# Data (optional – uncomment if needed)
+# ===============================
+# data/
+# datasets/
