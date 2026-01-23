@@ -10,7 +10,7 @@ import sys
 #from pathlib import Path
 #sys.path.append(Path().absolute())
 sys.path.append('/kaggle/working/adversarial-patch-transferability/pretrained_models/PIDNet')
-from model_util import BasicBlock, Bottleneck, segmenthead, DAPPM, PAPPM, PagFM, Bag, Light_Bag
+from .model_util import BasicBlock, Bottleneck, segmenthead, DAPPM, PAPPM, PagFM, Bag, Light_Bag
 import logging
 
 
