@@ -6,9 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-import sys
-sys.path.append('/kaggle/working/adversarial-patch-transferability/pretrained_models/BisNetV1')
-from ResNet import Resnet18
+from .ResNet import Resnet18
 
 from torch.nn import BatchNorm2d
 
