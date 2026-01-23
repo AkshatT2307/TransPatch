@@ -1,6 +1,6 @@
 import sys
 sys.path.append('/kaggle/working/adversarial-patch-transferability/pretrained_models/ICNet/')
-from .backbone import SegBaseModel,SegBaseModel_resnet
+from backbone import SegBaseModel,SegBaseModel_resnet
 import torch.nn as nn
 import torch.nn.functional as F
 
