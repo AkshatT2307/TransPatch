@@ -49,7 +49,8 @@ class BDD100K(BaseDataset):
                  scale_factor=16,
                  mean=[0.485, 0.456, 0.406], 
                  std=[0.229, 0.224, 0.225],
-                 bd_dilate_size=4):
+                 bd_dilate_size=4,
+                 use_color_labels=True):
 
         super(BDD100K, self).__init__(ignore_label, base_size,
                 crop_size, scale_factor, mean, std,)
@@ -57,6 +58,7 @@ class BDD100K(BaseDataset):
         self.root = root
         self.list_path = list_path
         self.num_classes = num_classes
+        self.use_color_labels = use_color_labels
 
         self.multi_scale = multi_scale
         self.flip = flip
@@ -115,7 +117,14 @@ class BDD100K(BaseDataset):
         
         # BDD100K seg structure: bdd100k_seg/bdd100k/seg/images/{split}/ and labels/{split}/
         img_dir = os.path.join(self.root, 'images', split)
-        label_dir = os.path.join(self.root, 'labels', split)
+        
+        # Choose label directory based on use_color_labels parameter
+        if self.use_color_labels:
+            label_dir = os.path.join(self.root, 'color_labels', split)
+            alt_label_dir = os.path.join(self.root, 'labels', split)
+        else:
+            label_dir = os.path.join(self.root, 'labels', split)
+            alt_label_dir = os.path.join(self.root, 'color_labels', split)
         
         # Verify directories exist
         if not os.path.exists(img_dir):
@@ -124,12 +133,14 @@ class BDD100K(BaseDataset):
                            f"Please check dataset path or provide a list file.")
         
         if not os.path.exists(label_dir):
-            # Try color_labels as alternative
-            label_dir = os.path.join(self.root, 'color_labels', split)
+            # Try alternative label directory
+            label_dir = alt_label_dir
             if not os.path.exists(label_dir):
+                primary_dir = 'color_labels' if self.use_color_labels else 'labels'
+                alt_dir = 'labels' if self.use_color_labels else 'color_labels'
                 raise ValueError(f"Label directory not found.\n"
-                               f"Tried: {self.root}/labels/{split}/\n"
-                               f"Tried: {self.root}/color_labels/{split}/\n"
+                               f"Tried: {self.root}/{primary_dir}/{split}/\n"
+                               f"Tried: {self.root}/{alt_dir}/{split}/\n"
                                f"Please check dataset structure.")
         
         print(f"Images directory: {img_dir}")
