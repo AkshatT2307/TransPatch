@@ -12,33 +12,42 @@ import logging
 from logging import Formatter
 from logging.handlers import RotatingFileHandler
 
-def setup_logging(log_dir):
-    log_file_format = "%(message)s"
-    log_console_format = "%(message)s"
+def setup_logging(log_dir, level: str = "INFO", minimal_banner: bool = False):
+  log_file_format = "%(message)s"
+  log_console_format = "%(message)s"
 
-    # Main logger
-    main_logger = logging.getLogger()
-    if (main_logger.hasHandlers()):
-      main_logger.handlers.clear()
-    main_logger.setLevel(logging.INFO)
+  # Resolve level string to logging constant
+  level_map = {
+    "DEBUG": logging.DEBUG,
+    "INFO": logging.INFO,
+    "WARNING": logging.WARNING,
+    "ERROR": logging.ERROR,
+    "CRITICAL": logging.CRITICAL,
+  }
+  console_level = level_map.get(str(level).upper(), logging.INFO)
 
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(Formatter(log_console_format))
+  # Main logger
+  main_logger = logging.getLogger()
+  if main_logger.hasHandlers():
+    main_logger.handlers.clear()
+  main_logger.setLevel(console_level)
 
-    exp_file_handler = RotatingFileHandler(log_dir+'exp_debug.log', maxBytes=10**16, backupCount=5)
-    exp_file_handler.setLevel(logging.DEBUG)
-    exp_file_handler.setFormatter(Formatter(log_file_format))
+  console_handler = logging.StreamHandler()
+  console_handler.setLevel(console_level)
+  console_handler.setFormatter(Formatter(log_console_format))
 
-    # exp_errors_file_handler = RotatingFileHandler(log_dir+'exp_error.log', maxBytes=10**6, backupCount=5)
-    # exp_errors_file_handler.setLevel(logging.WARNING)
-    # exp_errors_file_handler.setFormatter(Formatter(log_file_format))
+  # Always capture DEBUG to file, regardless of console level
+  exp_file_handler = RotatingFileHandler(os.path.join(log_dir, 'exp_debug.log'), maxBytes=10**16, backupCount=5)
+  exp_file_handler.setLevel(logging.DEBUG)
+  exp_file_handler.setFormatter(Formatter(log_file_format))
 
-    main_logger.addHandler(console_handler)
-    main_logger.addHandler(exp_file_handler)
-    # main_logger.addHandler(exp_errors_file_handler)
+  main_logger.addHandler(console_handler)
+  main_logger.addHandler(exp_file_handler)
 
-    return main_logger
+  # Optional minimal banner flag stored on logger for later checks
+  setattr(main_logger, "_minimal_banner", bool(minimal_banner))
+
+  return main_logger
 
 
 
@@ -82,28 +91,35 @@ def process_config(config):
     log_dir = os.path.join(config.experiment.log_patch_address, "logs/")
     create_dirs([patch_dir, log_dir])
 
-    # setup logging in the project
-    main_logger = setup_logging(log_dir)
+    # setup logging in the project (configurable level + banner)
+    log_level = getattr(config.experiment, 'log_level', 'INFO')
+    minimal_banner = getattr(config.experiment, 'minimal_logs', False)
+    main_logger = setup_logging(log_dir, level=log_level, minimal_banner=minimal_banner)
 
     # making sure that you have provided the exp_name.
     try:
+      if not getattr(main_logger, "_minimal_banner", False):
         main_logger.info(" ****************************************************************************** ")
         main_logger.info(f'                  {config.experiment.name} at {str(datetime.datetime.now())}')
         main_logger.info(" ****************************************************************************** ")
+      else:
+        main_logger.info(f"{config.experiment.name} | {str(datetime.datetime.now())}")
     except AttributeError:
         print("ERROR!!..Please provide the exp_name in yaml file..")
         exit(-1)
 
-    main_logger.info("Hi, This is root.")
-    main_logger.info("After the configurations are successfully processed and dirs are created.")
-    main_logger.info("The pipeline of the project will begin now.")
+    if not getattr(main_logger, "_minimal_banner", False):
+      main_logger.info("Hi, This is root.")
+      main_logger.info("After the configurations are successfully processed and dirs are created.")
+      main_logger.info("The pipeline of the project will begin now.")
 
 
     # configuration = '\n'
     # for i in config:
     #     configuration += i+': '+str(config[i])+'\n'
 
-    main_logger.info(log_config(config))
+    if not getattr(main_logger, "_minimal_banner", False):
+      main_logger.info(log_config(config))
 
     return main_logger
 

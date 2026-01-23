@@ -175,7 +175,7 @@ class PatchTrainer():
           eta_seconds = ((time.time() - start_time) / self.current_iteration) * (iters_per_epoch*epochs - self.current_iteration)
           eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
 
-          if i_iter % self.log_per_iters == 0:
+          if self.log_per_iters and self.log_per_iters > 0 and i_iter % self.log_per_iters == 0:
             self.logger.info(
               "Epochs: {:d}/{:d} || Samples: {:d}/{:d} || Lr: {:.6f} || Loss: {:.4f} || mIoU: {:.4f} || Cost Time: {} || Estimated Time: {}".format(
                   self.current_epoch, self.end_epoch,

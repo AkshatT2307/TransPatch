@@ -263,7 +263,7 @@ class PatchTrainer():
                   self.patch.clamp_(0, 1)
 
               # LOG
-              if i_iter % self.log_per_iters == 0:
+              if self.log_per_iters and self.log_per_iters > 0 and i_iter % self.log_per_iters == 0:
                   elapsed = int(time.time() - start_time)
                   eta = int((elapsed / max(self.current_iteration,1)) * (iters_per_epoch*epochs - self.current_iteration))
                   self.logger.info(

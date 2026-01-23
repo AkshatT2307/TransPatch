@@ -710,7 +710,7 @@ class PatchTrainer:
                 _, mIoU = self.metric.get()
                 cum_attack_loss += attack_loss.item()
 
-                if it % self.log_every == 0:
+                if self.log_every and self.log_every > 0 and it % self.log_every == 0:
                     elapsed = str(datetime.timedelta(seconds=int(time.time() - start_time)))
                     eta_sec = ((time.time() - start_time) / max(1, (ep - self.start_epoch) * self.iters_per_epoch + it + 1)) * \
                               (self.total_epochs * self.iters_per_epoch - ((ep - self.start_epoch) * self.iters_per_epoch + it + 1))

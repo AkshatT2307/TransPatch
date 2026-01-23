@@ -488,7 +488,7 @@ class PatchTrainer():
                           (iters_per_epoch * total_epochs - self.current_iteration)
             eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
 
-            if i_iter % self.log_per_iters == 0:
+            if self.log_per_iters and self.log_per_iters > 0 and i_iter % self.log_per_iters == 0:
                 self.logger.info(
                     "Epoch: {:d}/{:d} || Batch: {:d}/{:d} || Samples: {:d}/{:d} || "
                     "Epsilon(step): {:.6f} || Loss: {:.4f} || mIoU: {:.4f} || "

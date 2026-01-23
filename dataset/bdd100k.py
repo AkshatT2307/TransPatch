@@ -1,4 +1,5 @@
 import os
+import logging
 
 import cv2
 import numpy as np
@@ -68,7 +69,7 @@ class BDD100K(BaseDataset):
         if os.path.exists(list_file_path):
             self.img_list = [line.strip().split() for line in open(list_file_path)]
         else:
-            print(f"Warning: List file '{list_file_path}' not found. Auto-discovering files...")
+            logging.getLogger().debug(f"List file '{list_file_path}' not found. Auto-discovering files...")
             self.img_list = self._auto_discover_files()
 
         self.files = self.read_files()
@@ -143,8 +144,8 @@ class BDD100K(BaseDataset):
                                f"Tried: {self.root}/{alt_dir}/{split}/\n"
                                f"Please check dataset structure.")
         
-        print(f"Images directory: {img_dir}")
-        print(f"Labels directory: {label_dir}")
+        logging.getLogger().debug(f"Images directory: {img_dir}")
+        logging.getLogger().debug(f"Labels directory: {label_dir}")
         
         # Get all image files from images/{split}/ directory
         images = []
@@ -153,7 +154,7 @@ class BDD100K(BaseDataset):
             if f.endswith('.jpg') or f.endswith('.png'):
                 images.append(f)
         
-        print(f"Found {len(images)} images in {split} split")
+        logging.getLogger().debug(f"Found {len(images)} images in {split} split")
         
         if len(images) == 0:
             raise ValueError(f"No image files (.jpg or .png) found in {img_dir}")
@@ -193,9 +194,9 @@ class BDD100K(BaseDataset):
                     img_list.append([img_path])
                 elif len(img_list) < 3:
                     # Only warn for first few
-                    print(f"Warning: No label found for {img_name}")
+                    logging.getLogger().debug(f"No label found for {img_name}")
         
-        print(f"Successfully matched {len(img_list)} image-label pairs")
+        logging.getLogger().debug(f"Matched {len(img_list)} image-label pairs")
         
         if len(img_list) == 0:
             raise ValueError(f"No valid image-label pairs found.\n"

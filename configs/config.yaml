@@ -3,6 +3,11 @@ experiment:
   name: "Experiments"
   log_patch_address: "/kaggle/working/adversarial-patch-transferability/Experiments/"
   device: "cuda"
+  # Logging controls
+  # Set to WARNING for minimal console output; DEBUG/INFO for more detail
+  log_level: "WARNING"
+  # If True, suppress verbose startup banners and full config dump
+  minimal_logs: True
 
 ### 1.Model
 model:
