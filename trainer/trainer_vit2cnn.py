@@ -729,7 +729,7 @@ class PatchTrainer:
                 iters_run += 1
 
                 if pbar is not None:
-                    pbar.set_postfix({"atk": f"{atk_val:.3f}", "mIoU": f"{mIoU:.3f}"}, refresh=False)
+                    # progress bar only (no per-batch metrics printed)
                     pbar.update(1)
 
             pixAcc, meanIoU = self.metric.get()
