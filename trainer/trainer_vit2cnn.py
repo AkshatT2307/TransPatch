@@ -473,15 +473,13 @@ class PatchTrainer:
         return logits
 
     # ---------------- Train ----------------
+    # ---------------- Train ----------------
     def train(self):
-        #start_epoch, end_epoch, total_epochs = self.start_epoch, self.end_epoch, self.total_epochs
-        #assert total_epochs == 30, f"This schedule expects 30 epochs; got {total_epochs}."
-        #switch_epoch = start_epoch + (total_epochs // 2)
-        desired_total = int(getattr(self.cfg.train, "total_epochs", 20))  # 20
+        desired_total = int(getattr(self.cfg.train, "total_epochs", 20))
         self.end_epoch = self.start_epoch + desired_total
         start_epoch, end_epoch = self.start_epoch, self.end_epoch
         total_epochs = end_epoch - start_epoch
-        switch_epoch = start_epoch + (total_epochs // 2)  # 10/10 split if total=20
+        switch_epoch = start_epoch + (total_epochs // 2)
 
         start_time = time.time()
         self.log.info(
@@ -490,11 +488,11 @@ class PatchTrainer:
             f"Iterations/epoch: {self.iters_per_epoch}"
         )
 
-        max_batches = int(getattr(self.cfg.train, "max_batches_per_epoch", 300))  # 300 << 2975
-        max_epochs  = int(getattr(self.cfg.train, "max_epochs", 10))              # 10 << 30
+        max_batches = int(getattr(self.cfg.train, "max_batches_per_epoch", 300))
+        max_epochs  = int(getattr(self.cfg.train, "max_epochs", 10))
         self.end_epoch = min(self.end_epoch, self.start_epoch + max_epochs)
         self.log.info(f"[Limiter] max_batches_per_epoch={max_batches}, max_epochs={max_epochs}")
-        surrogate_every = int(getattr(self.cfg.train, "surrogate_every", 4))  # every 4th step
+        surrogate_every = int(getattr(self.cfg.train, "surrogate_every", 4))
 
         IoU_over_epochs = []
         H, W = self.cfg.train.height, self.cfg.train.width
@@ -523,202 +521,199 @@ class PatchTrainer:
                 image = image.to(self.device)
                 true_label = true_label.to(self.device).long()
 
-                #base_patch = self.get_patch()
-                #patch = self.eot_patch(base_patch)
-
-                #patched_image, patched_label = self.apply_patch(image, true_label, patch)
-                #patched_label = patched_label.long()
-                #SIDEWALK P[ATCH PLACEMENT 
-
-                base_patch = self.get_patch()
-                patch = self.eot_patch(base_patch)
-                S = patch.shape[-1]
-                target_hw = true_label.shape[-2:]
-                
-                # --- get clean logits ON THE CLEAN IMAGE (you already have downscale logic below; reuse it) ---
-                vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
-                if vit_ds < 1.0:
-                    ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
-                    image_ds = F.interpolate(image, size=ds_hw, mode="bilinear", align_corners=False)
-                else:
-                    image_ds = image
-                
-                with torch.no_grad(), autocast(dtype=torch.float16):
-                    clean_logits, _ = self.segformer_forward(image_ds, out_size=target_hw)  # (B,C,H,W)
-                
-                # --- build sidewalk mask from clean prediction ---
-                clean_pred = clean_logits.argmax(dim=1)                # (B,H,W)
-                sidewalk_mask = (clean_pred == self.sidewalk_id)       # (B,H,W)
-                
-                # optional entropy bias on sidewalk pixels
-                ent = self._softmax_entropy(clean_logits) if self.sidewalk_entropy_bias else None  # (B,H,W)
-                
-                # optional dilation (per image)
-                if self.sidewalk_dilate > 1:
-                    sidewalk_mask = torch.stack([self._dilate_mask(m, self.sidewalk_dilate) for m in sidewalk_mask], dim=0)
-                
-                # --- choose per-image location & paste the same patch ---
-                patched_imgs = []
-                patched_label = true_label.clone().long()
-                for b in range(image.size(0)):
-                    yx = self._choose_patch_topleft_from_mask(
-                        sidewalk_mask[b], S,
-                        entropy_2d=(ent[b] if ent is not None else None),
-                        topk_frac=self.sidewalk_topk_frac
-                    )
-                    if yx is None:  # fallback random
-                        Htot, Wtot = target_hw
-                        y0 = random.randint(0, max(0, Htot - S))
-                        x0 = random.randint(0, max(0, Wtot - S))
-                    else:
-                        y0, x0 = yx
-                
-                    # paste the EOT patch
-                    patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
-                
-                    # (optional) mask labels under the patch to ignore supervision there
-                    if self.mask_patch_labels:
-                        patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
-                
-                patched_image = torch.cat(patched_imgs, dim=0)
-
-
-               # --- Downscale INTO SegFormer, keep losses/metrics at label size ---
-                target_hw = patched_label.shape[-2:]  # (H,W) of labels
-                vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))  # 0.75 is a good default
-                if vit_ds < 1.0:
-                    ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
-                    image_ds         = F.interpolate(image,         size=ds_hw, mode="bilinear", align_corners=False)
-                    patched_image_ds = F.interpolate(patched_image, size=ds_hw, mode="bilinear", align_corners=False)
-                else:
-                    image_ds, patched_image_ds = image, patched_image
-
-                # ViT forward (resized to label size and Mixed precision)
-                with autocast(dtype=torch.float16):
-                    logits_adv, atts_adv = self.segformer_forward(patched_image_ds, out_size=target_hw)
-                with torch.no_grad(), autocast(dtype=torch.float16):
-                    logits_clean, _ = self.segformer_forward(image_ds, out_size=target_hw)
-
-
-                # Attack loss (your two-stage)
-                if use_stage1:
-                    attack_loss = self.criterion.compute_loss_transegpgd_stage1(
-                        logits_adv, patched_label, logits_clean
-                    )
-                else:
-                    attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
-                        logits_adv, patched_label, logits_clean
-                    )
-
-                # Regularizers
-                with torch.no_grad():
-                    patch_mask = self._estimate_patch_mask(image, patched_image)
-                    
-                ah_loss = self.attn_hijack_loss(atts_adv, patch_mask, H, W)               # attention hijack
-                
-                if ah_loss.numel() == 0 or (ah_loss.detach().abs() < 1e-12):
-                    # fallback: saliency hijack (model-agnostic)
-                    # NOTE: saliency_hijack needs gradients through `patched_image`
-                    patched_image.requires_grad_(True)
-                    ah_loss = self.saliency_hijack_loss(logits_adv, patched_image, patch_mask)
-
-                tv = self.tv_loss(base_patch)                                            # TV
-                b_loss = self.boundary_disruption_loss(logits_clean, logits_adv)         # boundary/region
-                f_loss = self.freq_shaping_loss(base_patch)                              # frequency ring
-
-                # Optional: Surrogate-CNN gradient alignment (1st-order grads)
-    
-                ga_loss = torch.zeros((), device=self.device)
-                use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
-                               (surrogate_every <= 1 or (it % surrogate_every == 0)))
-                if use_sur_now:
-                    sur_logits = self.surrogate_forward_logits(patched_image, target_size=target_hw)
-                    if sur_logits is not None:
-                        ga_loss = self.logit_agreement_loss(logits_adv.detach(), sur_logits)
-                        
-                        # Option 2: KL alignment (comment out option 1 to use this)
-                        # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
-
-                # Total (minimize)
-                total = (-attack_loss) \
-                        + self.tv_weight * tv \
-                        + self.attn_w * ah_loss \
-                        + self.boundary_w * b_loss \
-                        + self.freq_w * f_loss \
-                        + self.grad_align_w * ga_loss
-
-                # ---- Optimize patch ----
+                # --- Optimize patch ---
                 if not self.use_pgd:
+                    # ==========================================
+                    #  OPTION A: ADAM OPTIMIZER (Single Step)
+                    # ==========================================
+                    base_patch = self.get_patch()
+                    patch = self.eot_patch(base_patch)
+                    S = patch.shape[-1]
+                    target_hw = true_label.shape[-2:]
+                    
+                    # 1. Prepare Image & Mask
+                    vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
+                    if vit_ds < 1.0:
+                        ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
+                        image_ds = F.interpolate(image, size=ds_hw, mode="bilinear", align_corners=False)
+                    else:
+                        image_ds = image
+                    
+                    with torch.no_grad(), autocast(dtype=torch.float16):
+                        clean_logits, _ = self.segformer_forward(image_ds, out_size=target_hw)
+                    
+                    clean_pred = clean_logits.argmax(dim=1)
+                    sidewalk_mask = (clean_pred == self.sidewalk_id)
+                    ent = self._softmax_entropy(clean_logits) if self.sidewalk_entropy_bias else None
+                    if self.sidewalk_dilate > 1:
+                        sidewalk_mask = torch.stack([self._dilate_mask(m, self.sidewalk_dilate) for m in sidewalk_mask], dim=0)
+                    
+                    # 2. Apply Patch
+                    patched_imgs = []
+                    patched_label = true_label.clone().long()
+                    for b in range(image.size(0)):
+                        yx = self._choose_patch_topleft_from_mask(
+                            sidewalk_mask[b], S,
+                            entropy_2d=(ent[b] if ent is not None else None),
+                            topk_frac=self.sidewalk_topk_frac
+                        )
+                        if yx is None:
+                            Htot, Wtot = target_hw
+                            y0 = random.randint(0, max(0, Htot - S))
+                            x0 = random.randint(0, max(0, Wtot - S))
+                        else:
+                            y0, x0 = yx
+                        
+                        patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                        if self.mask_patch_labels:
+                            patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                    
+                    patched_image = torch.cat(patched_imgs, dim=0)
+
+                    # 3. Downscale for Model
+                    if vit_ds < 1.0:
+                        patched_image_ds = F.interpolate(patched_image, size=ds_hw, mode="bilinear", align_corners=False)
+                    else:
+                        patched_image_ds = patched_image
+
+                    # 4. Forward & Loss
+                    with autocast(dtype=torch.float16):
+                        logits_adv, atts_adv = self.segformer_forward(patched_image_ds, out_size=target_hw)
+                    
+                    if use_stage1:
+                        attack_loss = self.criterion.compute_loss_transegpgd_stage1(logits_adv, patched_label, logits_clean)
+                    else:
+                        attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, logits_clean)
+
+                    with torch.no_grad():
+                        patch_mask = self._estimate_patch_mask(image, patched_image)
+                    
+                    ah_loss = self.attn_hijack_loss(atts_adv, patch_mask, H, W)
+                    if ah_loss.numel() == 0 or (ah_loss.detach().abs() < 1e-12):
+                        patched_image.requires_grad_(True)
+                        ah_loss = self.saliency_hijack_loss(logits_adv, patched_image, patch_mask)
+
+                    tv = self.tv_loss(base_patch)
+                    b_loss = self.boundary_disruption_loss(clean_logits, logits_adv)
+                    f_loss = self.freq_shaping_loss(base_patch)
+
+                    ga_loss = torch.zeros((), device=self.device)
+                    use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and (surrogate_every <= 1 or (it % surrogate_every == 0)))
+                    
+                    if use_sur_now:
+                        sur_logits = self.surrogate_forward_logits(patched_image, target_size=target_hw)
+                        if sur_logits is not None:
+                            ga_loss = self.logit_agreement_loss(logits_adv.detach(), sur_logits)
+                            if not use_stage1:
+                                surrogate_jsdiv_loss = self.criterion.compute_loss_transegpgd_stage2_js(sur_logits, patched_label, clean_logits)
+                                attack_loss = (attack_loss + surrogate_jsdiv_loss)/2.0
+
+                    total = (-attack_loss) + self.tv_weight * tv + self.attn_w * ah_loss + \
+                            self.boundary_w * b_loss + self.freq_w * f_loss + self.grad_align_w * ga_loss
+
                     self.model.zero_grad(set_to_none=True)
                     if self.surrogate is not None: self.surrogate.zero_grad(set_to_none=True)
                     if self.patch_param.grad is not None: self.patch_param.grad.zero_()
                     total.backward()
                     if self.opt is not None: self.opt.step()
                     if self.scheduler: self.scheduler.step()
+
                 else:
+                    # ==========================================
+                    #  OPTION B: PGD OPTIMIZER (Multi-Step)
+                    # ==========================================
                     K, alpha = self.pgd_steps, self.pgd_alpha
+                    
+                    # 1. Pre-calculate clean stats ONCE for efficiency (optional, but standard PGD usually fixes clean logits)
+                    # Note: Your original code re-calculated clean logits inside the loop, which is fine but slower.
+                    # We will keep it inside to match your structure exactly.
+
                     for _ in range(K):
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
-                        patched_image, patched_label = self.apply_patch(image, true_label, patch)
-                        patched_label = patched_label.long()
-
-                        target_hw = patched_label.shape[-2:]
-
-                        # --- Downscale INTO SegFormer here too ---
+                        
+                        # --- Re-apply Patch Placement (Same logic as Adam block) ---
+                        # Note: We need to reconstruct masks/locations to be safe, or cache them.
+                        # For simplicity, we re-run the placement logic since random seed might change placement otherwise.
                         vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
                         if vit_ds < 1.0:
                             ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
-                            image_ds         = F.interpolate(image,         size=ds_hw, mode="bilinear", align_corners=False)
+                            image_ds = F.interpolate(image, size=ds_hw, mode="bilinear", align_corners=False)
+                        else:
+                            image_ds = image
+
+                        with torch.no_grad():
+                             clean_logits_pgd, _ = self.segformer_forward(image_ds, out_size=target_hw)
+
+                        clean_pred = clean_logits_pgd.argmax(dim=1)
+                        sidewalk_mask = (clean_pred == self.sidewalk_id)
+                        ent = self._softmax_entropy(clean_logits_pgd) if self.sidewalk_entropy_bias else None
+                        if self.sidewalk_dilate > 1:
+                            sidewalk_mask = torch.stack([self._dilate_mask(m, self.sidewalk_dilate) for m in sidewalk_mask], dim=0)
+
+                        patched_imgs = []
+                        patched_label = true_label.clone().long()
+                        for b in range(image.size(0)):
+                            yx = self._choose_patch_topleft_from_mask(
+                                sidewalk_mask[b], S, entropy_2d=(ent[b] if ent is not None else None), topk_frac=self.sidewalk_topk_frac
+                            )
+                            if yx is None:
+                                Htot, Wtot = target_hw
+                                y0 = random.randint(0, max(0, Htot - S))
+                                x0 = random.randint(0, max(0, Wtot - S))
+                            else:
+                                y0, x0 = yx
+                            patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                            if self.mask_patch_labels:
+                                patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                        
+                        patched_image = torch.cat(patched_imgs, dim=0)
+                        
+                        if vit_ds < 1.0:
                             patched_image_ds = F.interpolate(patched_image, size=ds_hw, mode="bilinear", align_corners=False)
                         else:
-                            image_ds, patched_image_ds = image, patched_image
+                            patched_image_ds = patched_image
 
-                        logits_adv, atts_adv = self.segformer_forward(patched_image, out_size=target_hw)
-                        with torch.no_grad():
-                            logits_clean, _    = self.segformer_forward(image,        out_size=target_hw)
-
-
+                        # --- Forward ---
+                        logits_adv, atts_adv = self.segformer_forward(patched_image_ds, out_size=target_hw)
+                        
+                        # --- Losses ---
                         if use_stage1:
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage1(
-                                logits_adv, patched_label, logits_clean)
+                            attack_loss = self.criterion.compute_loss_transegpgd_stage1(logits_adv, patched_label, clean_logits_pgd)
                         else:
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
-                                logits_adv, patched_label, logits_clean)
+                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, clean_logits_pgd)
 
                         with torch.no_grad():
                             patch_mask = self._estimate_patch_mask(image, patched_image)
                         
                         ah_loss = self.attn_hijack_loss(atts_adv, patch_mask, H, W)
-
                         if ah_loss.numel() == 0 or (ah_loss.detach().abs() < 1e-12):
-                            # fallback: saliency hijack (model-agnostic)
-                            # NOTE: saliency_hijack needs gradients through `patched_image`
                             patched_image.requires_grad_(True)
                             ah_loss = self.saliency_hijack_loss(logits_adv, patched_image, patch_mask)
+                        
                         tv = self.tv_loss(base_patch)
-                        b_loss = self.boundary_disruption_loss(logits_clean, logits_adv)
+                        b_loss = self.boundary_disruption_loss(clean_logits_pgd, logits_adv)
                         f_loss = self.freq_shaping_loss(base_patch)
 
                         ga_loss = torch.zeros((), device=self.device)
-                        use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
-                                       (surrogate_every <= 1 or (it % surrogate_every == 0)))
+                        use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and (surrogate_every <= 1 or (it % surrogate_every == 0)))
+                        
                         if use_sur_now:
                             sur_logits = self.surrogate_forward_logits(patched_image, target_size=target_hw)
                             if sur_logits is not None:
+                                # 1. Cosine Alignment
                                 ga_loss = self.logit_agreement_loss(logits_adv.detach(), sur_logits)
+                                
+                                # 2. [FIX] Stage 2 Surrogate Loss (JSDiv)
+                                if not use_stage1:
+                                    surrogate_jsdiv_loss = self.criterion.compute_loss_transegpgd_stage2_js(
+                                        sur_logits, patched_label, clean_logits_pgd
+                                    )
+                                    # Mix into main attack loss
+                                    attack_loss = (attack_loss + surrogate_jsdiv_loss) / 2.0
 
-                        
-                                # Option 2: KL alignment (comment out option 1 to use this)
-                                # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
-
-
-                        total_inner = (-attack_loss) \
-                                      + self.tv_weight * tv \
-                                      + self.attn_w * ah_loss \
-                                      + self.boundary_w * b_loss \
-                                      + self.freq_w * f_loss \
-                                      + self.grad_align_w * ga_loss
+                        total_inner = (-attack_loss) + self.tv_weight * tv + self.attn_w * ah_loss + \
+                                      self.boundary_w * b_loss + self.freq_w * f_loss + self.grad_align_w * ga_loss
 
                         self.model.zero_grad(set_to_none=True)
                         if self.surrogate is not None: self.surrogate.zero_grad(set_to_none=True)
@@ -744,7 +739,6 @@ class PatchTrainer:
                 iters_run += 1
 
                 if pbar is not None:
-                    # progress bar only (no per-batch metrics printed)
                     pbar.update(1)
 
             pixAcc, meanIoU = self.metric.get()
