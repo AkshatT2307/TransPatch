@@ -73,30 +73,6 @@ class BDD100K(BaseDataset):
             self.img_list = self._auto_discover_files()
 
         self.files = self.read_files()
-
-        # BDD100K label mapping (same as Cityscapes for compatibility)
-        # Raw class IDs (0-33) mapped to evaluation classes (0-18)
-        self.label_mapping = {-1: ignore_label, 0: ignore_label, 
-                              1: ignore_label, 2: ignore_label, 
-                              3: ignore_label, 4: ignore_label, 
-                              5: ignore_label, 6: ignore_label, 
-                              7: 0, 8: 1, 9: ignore_label, 
-                              10: ignore_label, 11: 2, 12: 3, 
-                              13: 4, 14: ignore_label, 15: ignore_label, 
-                              16: ignore_label, 17: 5, 18: ignore_label, 
-                              19: 6, 20: 7, 21: 8, 22: 9, 23: 10, 24: 11,
-                              25: 12, 26: 13, 27: 14, 28: 15, 
-                              29: ignore_label, 30: ignore_label, 
-                              31: 16, 32: 17, 33: 18}
-        
-        # Class weights (estimated from BDD100K distribution)
-        # BDD100K has different class distributions than Cityscapes
-        # These are approximate weights for the 19 classes
-        self.class_weights = torch.FloatTensor([0.82, 0.95, 0.88, 1.05, 
-                                        1.02, 0.98, 0.97, 1.08,
-                                        0.85, 1.03, 0.96, 0.99, 
-                                        1.12, 0.92, 1.09, 1.11, 
-                                        1.08, 1.15, 1.05])
         
         self.bd_dilate_size = bd_dilate_size
         
@@ -232,23 +208,6 @@ class BDD100K(BaseDataset):
                     "name": name
                 })
         return files
-        
-    def convert_label(self, label, inverse=False):
-        """
-        Convert between raw class IDs and evaluation class IDs.
-        
-        Args:
-            label: label map
-            inverse: if True, convert from evaluation IDs back to raw IDs
-        """
-        temp = label.copy()
-        if inverse:
-            for v, k in self.label_mapping.items():
-                label[temp == k] = v
-        else:
-            for k, v in self.label_mapping.items():
-                label[temp == k] = v
-        return label
 
     def __getitem__(self, index):
         item = self.files[index]
@@ -268,7 +227,6 @@ class BDD100K(BaseDataset):
         # Training/validation time: load label and perform augmentation
         label = cv2.imread(os.path.join(self.root, item["label"]),
                            cv2.IMREAD_GRAYSCALE)
-        label = self.convert_label(label)
 
         # Generate sample with augmentation (multi-scale, flip, edge)
         image, label, edge = self.gen_sample(image, label, 
@@ -296,6 +254,5 @@ class BDD100K(BaseDataset):
         """
         preds = np.asarray(np.argmax(preds.cpu(), axis=1), dtype=np.uint8)
         for i in range(preds.shape[0]):
-            pred = self.convert_label(preds[i], inverse=True)
-            save_img = Image.fromarray(pred)
+            save_img = Image.fromarray(preds[i])
             save_img.save(os.path.join(sv_path, name[i]+'.png'))
