@@ -104,9 +104,24 @@ class PatchTrainer:
             s_name = getattr(config.surrogate, "name", "pidnet_s")
             try:
                 self.surrogate = get_pred_model(s_name, num_classes=config.dataset.num_classes)
+                
+                # Load pretrained weights from Kaggle
+                if '_s' in s_name:
+                    ckpt = torch.load('/kaggle/input/pidnet-s-weights/PIDNet_S_Cityscapes_test.pt', map_location=self.device)
+                elif '_m' in s_name:
+                    ckpt = torch.load('/kaggle/input/pidnet-m-weights/PIDNet_M_Cityscapes_test.pt', map_location=self.device)
+                else:  # _l
+                    ckpt = torch.load('/kaggle/input/pidnet-l-weights/PIDNet_L_Cityscapes_test.pt', map_location=self.device)
+                
+                if 'state_dict' in ckpt:
+                    ckpt = ckpt['state_dict']
+                model_dict = self.surrogate.state_dict()
+                ckpt = {k[6:]: v for k, v in ckpt.items() if k[6:] in model_dict.keys()}  # strip 'model.' prefix
+                self.surrogate.load_state_dict(ckpt)
+                
                 self.surrogate.to(self.device).eval()
                 for p in self.surrogate.parameters(): p.requires_grad_(False)
-                self.log.info(f"[Surrogate] Loaded CNN: {s_name}")
+                self.log.info(f"[Surrogate] Loaded CNN: {s_name} with pretrained weights")
             except Exception as e:
                 self.log.info(f"[Surrogate] Failed to load '{s_name}': {e}. Disabling grad alignment.")
                 self.use_surrogate = False
