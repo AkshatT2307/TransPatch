@@ -7,6 +7,7 @@ import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 import numpy as np
+from tqdm.auto import tqdm
 
 from dataset.cityscapes import Cityscapes
 from metrics.performance import SegmentationMetric
@@ -488,11 +489,21 @@ class PatchTrainer:
             use_stage1 = (ep < switch_epoch)
             stage = "Stage-1" if use_stage1 else "Stage-2(JS)"
             self.log.info(f"Epoch {ep}: using {stage}")
+            epoch_iter_limit = min(self.iters_per_epoch, max_batches) if max_batches else self.iters_per_epoch
+            pbar = tqdm(total=epoch_iter_limit, desc=f"Epoch {ep}/{end_epoch-1}", leave=False, dynamic_ncols=True)
 
             cum_attack_loss = 0.0
-            for it, batch in enumerate(self.train_dl, 0):
-                if max_batches and it >= max_batches:
-                        break
+            cum_attn_loss = 0.0
+            cum_tv_loss = 0.0
+            cum_bound_loss = 0.0
+            cum_freq_loss = 0.0
+            cum_ga_loss = 0.0
+            iters_run = 0
+            epoch_start = time.time()
+
+            for it, batch in enumerate(self.train_dl):
+                if it >= epoch_iter_limit:
+                    break
                 image, true_label, _, _, _ = batch
                 image = image.to(self.device)
                 true_label = true_label.to(self.device).long()
@@ -708,30 +719,42 @@ class PatchTrainer:
                 # --- metrics / logging ---
                 self.metric.update(logits_adv, patched_label)
                 _, mIoU = self.metric.get()
-                cum_attack_loss += attack_loss.item()
+                atk_val = attack_loss.item()
+                cum_attack_loss += atk_val
+                cum_attn_loss += ah_loss.item()
+                cum_tv_loss += tv.item()
+                cum_bound_loss += b_loss.item()
+                cum_freq_loss += f_loss.item()
+                cum_ga_loss += ga_loss.item()
+                iters_run += 1
 
-                if self.log_every and self.log_every > 0 and it % self.log_every == 0:
-                    elapsed = str(datetime.timedelta(seconds=int(time.time() - start_time)))
-                    eta_sec = ((time.time() - start_time) / max(1, (ep - self.start_epoch) * self.iters_per_epoch + it + 1)) * \
-                              (self.total_epochs * self.iters_per_epoch - ((ep - self.start_epoch) * self.iters_per_epoch + it + 1))
-                    eta_str = str(datetime.timedelta(seconds=int(eta_sec)))
-                    lr_show = (self.opt.param_groups[0]["lr"] if self.opt is not None else 0.0)
-                    self.log.info(
-                        f"Epoch {ep}/{end_epoch} || Batch {it+1}/{self.iters_per_epoch} || "
-                        f"LR: {lr_show:.3e} || "
-                        f"Atk: {attack_loss.item():.4f} || "
-                        f"Attn:{ah_loss.item():.4f} || TV:{tv.item():.4f} || "
-                        f"Bound:{b_loss.item():.4f} || Freq:{f_loss.item():.4f} || "
-                        f"GA:{ga_loss.item():.4f} || mIoU:{mIoU:.4f} || "
-                        f"Elapsed:{elapsed} || ETA:{eta_str}"
-                    )
+                if pbar is not None:
+                    pbar.set_postfix({"atk": f"{atk_val:.3f}", "mIoU": f"{mIoU:.3f}"}, refresh=False)
+                    pbar.update(1)
 
             pixAcc, meanIoU = self.metric.get()
-            avg_attack = cum_attack_loss / max(1, self.iters_per_epoch)
-            # Emit epoch meter at WARNING level so it shows under minimal logging
-            self.log.warning(
+            if pbar is not None:
+                pbar.close()
+
+            avg_attack = cum_attack_loss / max(1, iters_run)
+            avg_attn   = cum_attn_loss / max(1, iters_run)
+            avg_tv     = cum_tv_loss / max(1, iters_run)
+            avg_bound  = cum_bound_loss / max(1, iters_run)
+            avg_freq   = cum_freq_loss / max(1, iters_run)
+            avg_ga     = cum_ga_loss / max(1, iters_run)
+            epoch_elapsed = time.time() - epoch_start
+            epochs_done = (ep - start_epoch) + 1
+            epochs_left = max(0, (end_epoch - ep - 1))
+            eta_sec = (epoch_elapsed * epochs_left) if epochs_done == 0 else ( (time.time() - start_time) / epochs_done ) * epochs_left
+            eta_str = str(datetime.timedelta(seconds=int(eta_sec)))
+            elapsed_str = str(datetime.timedelta(seconds=int(epoch_elapsed)))
+            self.log.info("-"*100)
+            self.log.info(
                 f"Epoch {ep}/{end_epoch} | {stage} | "
-                f"Avg AttackLoss: {avg_attack:.4f} | Avg mIoU: {meanIoU:.4f} | Avg pixAcc: {pixAcc:.4f}"
+                f"Atk:{avg_attack:.4f} | Attn:{avg_attn:.4f} | TV:{avg_tv:.4f} | "
+                f"Bound:{avg_bound:.4f} | Freq:{avg_freq:.4f} | GA:{avg_ga:.4f} | "
+                f"mIoU:{meanIoU:.4f} | pixAcc:{pixAcc:.4f} | "
+                f"EpochTime:{elapsed_str} | ETA:{eta_str}"
             )
             IoU_over_epochs.append(self.metric.get(full=True))
 
