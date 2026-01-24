@@ -95,8 +95,8 @@ train:
   log_per_iters: 1
   start_epoch: 0
   end_epoch: 20
-  max_batches_per_epoch: 300      # was ~2975
-  max_epochs: 10                  # was 30 (you can still resume later)
+  max_batches_per_epoch: 2975      # was ~2975
+  max_epochs: 20                  # was 30 (you can still resume later)
   surrogate_every: 4              # run surrogate every 4th step only
   vit_downscale: 0.75             # feed a 0.75× resized image to SegFormer
   # finetune: False
