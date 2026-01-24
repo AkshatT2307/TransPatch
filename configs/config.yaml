@@ -5,7 +5,7 @@ experiment:
   device: "cuda"
   # Logging controls
   # Set to WARNING for minimal console output; DEBUG/INFO for more detail
-  log_level: "WARNING"
+  log_level: "INFO"
   # If True, suppress verbose startup banners and full config dump
   minimal_logs: True
 
