@@ -88,7 +88,7 @@ train:
   num_workers: 2
   pin_memory: True
   drop_last: False
-  batch_size: 1     # adjust according to gpu resources
+  batch_size: 4     # adjust according to gpu resources
   multi_scale: True
   scale_factor: 16
   power: 2.5
