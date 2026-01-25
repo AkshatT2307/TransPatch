@@ -192,7 +192,7 @@ class PatchTrainer:
                 getattr(config, "patch", object()), "class_topk_frac", 0.20))  # top 20%
             self.class_dilate = int(getattr(
                 getattr(config, "patch", object()), "class_dilate", 5))
-            self.mask_patch_labels = bool(getattr(getattr(config, "patch", object(
+        self.mask_patch_labels = bool(getattr(getattr(config, "patch", object(
             )), "mask_patch_labels", True))   # set ignore_index under patch
 
     def _softmax_entropy(self, logits, dim=1, eps=1e-8):
