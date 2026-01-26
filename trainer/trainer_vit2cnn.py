@@ -85,9 +85,9 @@ class PatchTrainer:
             pin_memory=config.test.pin_memory, drop_last=config.test.drop_last)
 
         self.iters_per_epoch = len(self.train_dl)
-        self.start_epoch = config.train.start_epoch
-        self.end_epoch = config.train.end_epoch
-        self.total_epochs = self.end_epoch - self.start_epoch
+        self.stage1_epochs = config.train.stage1_epochs
+        self.stage2_epochs = config.train.stage2_epochs
+        self.total_epochs = self.stage1_epochs + self.stage2_epochs
         assert self.total_epochs > 0
 
         # ---------------- SegFormer (ViT target) ----------------
@@ -514,15 +514,11 @@ class PatchTrainer:
 
     # ---------------- Train ----------------
     def train(self):
-        # start_epoch, end_epoch, total_epochs = self.start_epoch, self.end_epoch, self.total_epochs
-        # assert total_epochs == 30, f"This schedule expects 30 epochs; got {total_epochs}."
-        # switch_epoch = start_epoch + (total_epochs // 2)
-        desired_total = int(getattr(self.cfg.train, "total_epochs", 20))  # 20
-        self.end_epoch = self.start_epoch + desired_total
+        self.start_epoch=0
+        self.end_epoch = self.start_epoch + self.total_epochs
         start_epoch, end_epoch = self.start_epoch, self.end_epoch
         total_epochs = end_epoch - start_epoch
-        switch_epoch = start_epoch + \
-            (total_epochs // 2)  # 10/10 split if total=20
+        switch_epoch = self.stage1_epochs
 
         start_time = time.time()
         self.log.info(

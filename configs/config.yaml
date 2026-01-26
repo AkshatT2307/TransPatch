@@ -97,8 +97,8 @@ train:
   scale_factor: 16
   power: 2.5
   log_per_iters: 1
-  start_epoch: 0
-  end_epoch: 20
+  stage1_epochs: 15        # how many epochs are “Stage 1”
+  stage2_epochs: 15
   max_batches_per_epoch: 150      # was ~2975
   max_epochs: 20                  # was 30 (you can still resume later)
   surrogate_every: 4              # run surrogate every 4th step only
@@ -135,8 +135,7 @@ attack:
   use_margin:  False
 
   # new entries for schedulers & mixing
-  stage1_epochs: 15        # how many epochs are “Stage 1”
-  stage2_epochs: 15        # how many epochs are “Stage 2” (so total=end_epoch)
+  # how many epochs are “Stage 2” (so total=end_epoch)
   eta:            0.5      # weight for mixing L1 vs L2 (per-pixel blend)
 
   # feature-space divergence
