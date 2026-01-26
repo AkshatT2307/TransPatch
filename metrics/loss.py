@@ -29,8 +29,8 @@ class PatchLoss(nn.Module):
         self.gamma=0.7
 
         # schedulers
-        E1 = config.attack.stage1_epochs
-        E2 = config.attack.stage2_epochs
+        E1 = config.train.stage1_epochs
+        E2 = config.train.stage2_epochs
         self.gamma_sched = LinearScheduler(config.attack.gamma_start,
                                           config.attack.gamma_end, E1)
         self.beta_sched  = LinearScheduler(config.attack.beta_start,
