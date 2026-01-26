@@ -749,7 +749,7 @@ class PatchTrainer:
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
                         patched_imgs=[]
-                        patched_image=image
+                        
                         # (optional) mask labels under the patch to ignore supervision there
                         if self.mask_patch_labels:
                             patched_label[b, y0:y0+S,x0:x0+S] = self.ignore_index
@@ -757,7 +757,7 @@ class PatchTrainer:
                         for b in range(image.size(0)):
                                 # paste the EOT patch
                             y0,x0=patch_locations[b]
-                            patched_imgs.append(self._paste_patch(patched_image[b:b+1], patch, y0,x0))
+                            patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0,x0))
 
                         patched_image = torch.cat(patched_imgs, dim=0)
                         patched_label = patched_label.long()
