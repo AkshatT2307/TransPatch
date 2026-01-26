@@ -512,9 +512,6 @@ class PatchTrainer:
                 logits, size=target_size, mode="bilinear", align_corners=False)
         return logits
 
-    def apply_patch_as_per_loc():
-
-
     # ---------------- Train ----------------
     def train(self):
         self.start_epoch=0
