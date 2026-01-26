@@ -682,9 +682,16 @@ class PatchTrainer:
                         logits_adv, patched_label, logits_clean
                     )
                 else:
+                    # --------------------------------------------------------------------------------------------------------------------------
+                    surrogate_adv_logits=self.surrogate_forward_logits(patched_image, out_size=target_hw)
+                    surrogate_clean=self.surrogate_forward_logits(image, out_size=target_hw)
+                    attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                        surrogate_adv_logits, patched_label, surrogate_clean
+                    )
                     attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
                         logits_adv, patched_label, logits_clean
                     )
+
 
                 # Regularizers
                 with torch.no_grad():
@@ -724,7 +731,7 @@ class PatchTrainer:
                         # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
                 # Total (minimize)
-                total = (-attack_loss) \
+                total = -(attack_loss+attack_loss_surrogate)/2 \
                     + self.tv_weight * tv \
                     + self.attn_w * ah_loss \
                     + self.boundary_w * b_loss \
@@ -786,8 +793,11 @@ class PatchTrainer:
                             attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                                 logits_adv, patched_label, logits_clean)
                         else:
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
-                                logits_adv, patched_label, logits_clean)
+                            surrogate_adv_logits=self.surrogate_forward_logits(patched_image, out_size=target_hw)
+                            surrogate_clean=self.surrogate_forward_logits(image, out_size=target_hw)
+                            attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                            surrogate_adv_logits, patched_label, surrogate_clean)
+                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, logits_clean)
 
                         with torch.no_grad():
                             patch_mask = self._estimate_patch_mask(
@@ -820,7 +830,7 @@ class PatchTrainer:
                                 # Option 2: KL alignment (comment out option 1 to use this)
                                 # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
-                        total_inner = (-attack_loss) \
+                        total = -(attack_loss+attack_loss_surrogate)/2 \
                             + self.tv_weight * tv \
                             + self.attn_w * ah_loss \
                             + self.boundary_w * b_loss \
