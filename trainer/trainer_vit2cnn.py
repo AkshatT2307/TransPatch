@@ -512,6 +512,9 @@ class PatchTrainer:
                 logits, size=target_size, mode="bilinear", align_corners=False)
         return logits
 
+    def apply_patch_as_per_loc():
+
+
     # ---------------- Train ----------------
     def train(self):
         self.start_epoch=0
@@ -543,7 +546,7 @@ class PatchTrainer:
         for ep in range(start_epoch, end_epoch):
             self.metric.reset()
 
-            if(switch_epoch==1):
+            if(switch_epoch==ep):
                 patch1 = self.get_patch().detach().cpu()
             use_stage1 = (ep < switch_epoch)
             stage = "Stage-1" if use_stage1 else "Stage-2(JS)"
@@ -568,13 +571,6 @@ class PatchTrainer:
                 image, true_label, _, _, _ = batch
                 image = image.to(self.device)
                 true_label = true_label.to(self.device).long()
-
-                # base_patch = self.get_patch()
-                # patch = self.eot_patch(base_patch)
-
-                # patched_image, patched_label = self.apply_patch(image, true_label, patch)
-                # patched_label = patched_label.long()
-                # class P[ATCH PLACEMENT
 
                 base_patch = self.get_patch()
                 patch = self.eot_patch(base_patch)
@@ -617,6 +613,7 @@ class PatchTrainer:
 
                         # --- choose per-image location & paste the same patch ---
 
+                    patch_locations=[]
                     for b in range(image.size(0)):
                         yx = self._choose_patch_topleft_from_mask(
                             class_mask[b], S,
@@ -630,6 +627,7 @@ class PatchTrainer:
                         else:
                             y0, x0 = yx
 
+                        patch_locations.append((y0,x0))
                         # paste the EOT patch
                         patched_imgs.append(self._paste_patch(
                             image[b:b+1], patch, y0, x0))
@@ -645,15 +643,17 @@ class PatchTrainer:
                     y0 = (Htot-self.S)//2
                     x0 = (Wtot-self.S)//2
 
+                    patch_locations=[]
                     for b in range(image.size(0)):
                         # paste the EOT patch
+
+                        patch_locations.append((y0,x0))
                         patched_imgs.append(self._paste_patch(
                             image[b:b+1], patch, y0, x0))
 
                         # (optional) mask labels under the patch to ignore supervision there
                         if self.mask_patch_labels:
-                            patched_label[b, y0:y0+S,
-                                          x0:x0+S] = self.ignore_index
+                            patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
 
                 patched_image = torch.cat(patched_imgs, dim=0)
 
@@ -751,10 +751,19 @@ class PatchTrainer:
                     for _ in range(K):
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
-                        patched_image, patched_label = self.apply_patch(
-                            image, true_label, patch)
-                        patched_label = patched_label.long()
+                        patched_imgs=[]
+                        patched_image=image
+                        # (optional) mask labels under the patch to ignore supervision there
+                        if self.mask_patch_labels:
+                            patched_label[b, y0:y0+S,x0:x0+S] = self.ignore_index
 
+                        for b in range(image.size(0)):
+                                # paste the EOT patch
+                            y0,x0=patch_locations[b]
+                            patched_imgs.append(self._paste_patch(patched_image[b:b+1], patch, y0,x0))
+
+                        patched_image = torch.cat(patched_imgs, dim=0)
+                        patched_label = patched_label.long()
                         target_hw = patched_label.shape[-2:]
 
                         # --- Downscale INTO SegFormer here too ---
