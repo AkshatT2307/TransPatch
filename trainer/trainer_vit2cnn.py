@@ -713,16 +713,56 @@ class PatchTrainer:
                     if self.scheduler:
                         self.scheduler.step()
                 else:
-                    # PGD loop
+                    # PGD loop with per-image patch placement (same as Adam branch)
                     K, alpha = self.pgd_steps, self.pgd_alpha
                     for _ in range(K):
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
-                        patched_image, patched_label = self.apply_patch(image, true_label, patch)
-                        patched_label = patched_label.long()
-
+                        S = patch.shape[-1]
+                        patched_imgs = []
+                        patched_label = true_label.clone().long()
+                        if (self.loc == "class"):
+                            vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
+                            if vit_ds < 1.0:
+                                ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
+                                image_ds = F.interpolate(image, size=ds_hw, mode="bilinear", align_corners=False)
+                            else:
+                                image_ds = image
+                            with torch.no_grad(), autocast(dtype=torch.float16):
+                                clean_logits_gpu0, _ = self.segformer_forward(image_ds, out_size=true_label.shape[-2:])
+                                clean_logits = clean_logits_gpu0.to(self.device1)
+                            clean_pred = clean_logits.argmax(dim=1)
+                            class_mask = (clean_pred == self.class_id)
+                            ent = self._softmax_entropy(clean_logits) if self.class_entropy_bias else None
+                            if self.class_dilate > 1:
+                                class_mask = torch.stack([
+                                    self._dilate_mask(m, self.class_dilate) for m in class_mask
+                                ], dim=0)
+                            for b in range(image.size(0)):
+                                yx = self._choose_patch_topleft_from_mask(
+                                    class_mask[b], S,
+                                    entropy_2d=(ent[b] if ent is not None else None),
+                                    topk_frac=self.class_topk_frac
+                                )
+                                if yx is None:
+                                    Htot, Wtot = true_label.shape[-2:]
+                                    y0 = random.randint(0, max(0, Htot - S))
+                                    x0 = random.randint(0, max(0, Wtot - S))
+                                else:
+                                    y0, x0 = yx
+                                patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                                if self.mask_patch_labels:
+                                    patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                        elif (self.loc == "center"):
+                            Htot, Wtot = true_label.shape[-2:]
+                            y0 = (Htot-self.S)//2
+                            x0 = (Wtot-self.S)//2
+                            for b in range(image.size(0)):
+                                patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                                if self.mask_patch_labels:
+                                    patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                        patched_image = torch.cat(patched_imgs, dim=0)
                         target_hw = patched_label.shape[-2:]
-
                         vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
                         if vit_ds < 1.0:
                             ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
@@ -730,56 +770,45 @@ class PatchTrainer:
                             patched_image_ds = F.interpolate(patched_image, size=ds_hw, mode="bilinear", align_corners=False)
                         else:
                             image_ds, patched_image_ds = image, patched_image
-
                         # Forward on GPU 0, move to GPU 1
                         logits_adv_gpu0, atts_adv_gpu0 = self.segformer_forward(patched_image_ds, out_size=target_hw)
                         logits_adv = logits_adv_gpu0.to(self.device1)
                         atts_adv = [att.to(self.device1) if att is not None else None for att in atts_adv_gpu0]
-                        
                         with torch.no_grad():
                             logits_clean_gpu0, _ = self.segformer_forward(image_ds, out_size=target_hw)
                             logits_clean = logits_clean_gpu0.to(self.device1)
-
                         if use_stage1:
                             attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                                 logits_adv, patched_label, logits_clean)
                         else:
                             attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
                                 logits_adv, patched_label, logits_clean)
-
                         with torch.no_grad():
                             patch_mask = self._estimate_patch_mask(image, patched_image)
-
                         ah_loss = self.attn_hijack_loss(atts_adv, patch_mask, H, W)
-
                         if ah_loss.numel() == 0 or (ah_loss.detach().abs() < 1e-12):
                             patched_image.requires_grad_(True)
                             ah_loss = self.saliency_hijack_loss(logits_adv, patched_image, patch_mask)
-                            
                         tv = self.tv_loss(base_patch)
                         b_loss = self.boundary_disruption_loss(logits_clean, logits_adv)
                         f_loss = self.freq_shaping_loss(base_patch)
-
                         ga_loss = torch.zeros((), device=self.device1)
                         if use_sur_now:
                             sur_logits = self.surrogate_forward_logits(patched_image, target_size=target_hw)
                             if sur_logits is not None:
                                 ga_loss = self.logit_agreement_loss(logits_adv.detach(), sur_logits)
-
                         total_inner = (-attack_loss) \
                             + self.tv_weight * tv \
                             + self.attn_w * ah_loss \
                             + self.boundary_w * b_loss \
                             + self.freq_w * f_loss \
                             + self.grad_align_w * ga_loss
-
                         self.model.zero_grad(set_to_none=True)
                         if self.surrogate is not None:
                             self.surrogate.zero_grad(set_to_none=True)
                         if self.patch_param.grad is not None:
                             self.patch_param.grad.zero_()
                         total_inner.backward()
-
                         with torch.no_grad():
                             self.patch_param += alpha * self.patch_param.grad.sign()
                             vis = self.get_patch().clamp(0, 1)
