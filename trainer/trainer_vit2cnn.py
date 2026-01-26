@@ -1,4 +1,4 @@
-from torch.cuda.amp import autocast
+import torch
 from transformers import AutoConfig, SegformerForSemanticSegmentation
 # assumes available in your repo
 from pretrained_models.PIDNet.model import get_pred_model
@@ -588,7 +588,7 @@ class PatchTrainer:
                         image_ds = image
 
                     # SegFormer forward: move input to device0, get output back to device1
-                    with torch.no_grad(), autocast(dtype=torch.float16):
+                    with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
                         clean_logits, _ = self.segformer_forward(image_ds, out_size=target_hw)
 
                     clean_pred = clean_logits.argmax(dim=1)
@@ -634,9 +634,9 @@ class PatchTrainer:
                     image_ds, patched_image_ds = image, patched_image
 
                 # SegFormer forward: move input to device0, get output back to device1
-                with autocast(dtype=torch.float16):
+                with torch.amp.autocast('cuda', dtype=torch.float16):
                     logits_adv, atts_adv = self.segformer_forward(patched_image_ds, out_size=target_hw)
-                with torch.no_grad(), autocast(dtype=torch.float16):
+                with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
                     logits_clean, _ = self.segformer_forward(image_ds, out_size=target_hw)
 
                 # All losses and metrics on device1
@@ -693,9 +693,49 @@ class PatchTrainer:
                     for _ in range(K):
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
-                        patched_image, patched_label = self.apply_patch(
-                            image, true_label, patch)
-                        patched_label = patched_label.long()
+                        S = patch.shape[-1]
+                        patched_imgs = []
+                        patched_label = true_label.clone().long()
+                        if (self.loc == "class"):
+                            vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
+                            if vit_ds < 1.0:
+                                ds_hw = (int(image.shape[-2] * vit_ds), int(image.shape[-1] * vit_ds))
+                                image_ds = F.interpolate(image, size=ds_hw, mode="bilinear", align_corners=False)
+                            else:
+                                image_ds = image
+                            with torch.no_grad(), torch.amp.autocast('cuda', dtype=torch.float16):
+                                clean_logits, _ = self.segformer_forward(image_ds, out_size=true_label.shape[-2:])
+                            clean_pred = clean_logits.argmax(dim=1)
+                            class_mask = (clean_pred == self.class_id)
+                            ent = self._softmax_entropy(clean_logits) if self.class_entropy_bias else None
+                            if self.class_dilate > 1:
+                                class_mask = torch.stack([
+                                    self._dilate_mask(m, self.class_dilate) for m in class_mask
+                                ], dim=0)
+                            for b in range(image.size(0)):
+                                yx = self._choose_patch_topleft_from_mask(
+                                    class_mask[b], S,
+                                    entropy_2d=(ent[b] if ent is not None else None),
+                                    topk_frac=self.class_topk_frac
+                                )
+                                if yx is None:
+                                    Htot, Wtot = true_label.shape[-2:]
+                                    y0 = random.randint(0, max(0, Htot - S))
+                                    x0 = random.randint(0, max(0, Wtot - S))
+                                else:
+                                    y0, x0 = yx
+                                patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                                if self.mask_patch_labels:
+                                    patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                        elif (self.loc == "center"):
+                            Htot, Wtot = true_label.shape[-2:]
+                            y0 = (Htot-self.S)//2
+                            x0 = (Wtot-self.S)//2
+                            for b in range(image.size(0)):
+                                patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0, x0))
+                                if self.mask_patch_labels:
+                                    patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+                        patched_image = torch.cat(patched_imgs, dim=0)
                         target_hw = patched_label.shape[-2:]
                         vit_ds = float(getattr(self.cfg.train, "vit_downscale", 0.75))
                         if vit_ds < 1.0:
