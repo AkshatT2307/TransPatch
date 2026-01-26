@@ -546,6 +546,9 @@ class PatchTrainer:
 
         for ep in range(start_epoch, end_epoch):
             self.metric.reset()
+
+            if(switch_epoch==1):
+                patch1 = self.get_patch().detach().cpu()
             use_stage1 = (ep < switch_epoch)
             stage = "Stage-1" if use_stage1 else "Stage-2(JS)"
             self.log.info(f"Epoch {ep}: using {stage}")
@@ -878,4 +881,4 @@ class PatchTrainer:
             )
             IoU_over_epochs.append(self.metric.get(full=True))
 
-        return self.get_patch().detach(), np.array(IoU_over_epochs)
+        return self.get_patch().detach(), np.array(IoU_over_epochs), patch1
