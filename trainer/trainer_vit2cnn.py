@@ -833,7 +833,7 @@ class PatchTrainer:
                                 # Option 2: KL alignment (comment out option 1 to use this)
                                 # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
-                        total = -(attack_loss+attack_loss_surrogate)/2 \
+                        total_inner = -(attack_loss+attack_loss_surrogate)/2 \
                             + self.tv_weight * tv \
                             + self.attn_w * ah_loss \
                             + self.boundary_w * b_loss \
