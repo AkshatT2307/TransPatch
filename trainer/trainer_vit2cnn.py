@@ -398,36 +398,36 @@ class PatchTrainer:
         return hijack_sum / used
 
 
-def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
-    # 1. REMOVE torch.no_grad()
-    # We need gradients to flow back to the adversarial patch.
-    
-    # 2. Use Softmax + Max to get a "Confidence Map"
-    # Shape: (B, 1, H, W)
-    # This map represents the model's confidence in its dominant prediction.
-    # Boundaries naturally appear as "valleys" or sharp drops in this map.
-    clean_conf = F.softmax(clean_logits, dim=1).max(dim=1, keepdim=True)[0]
-    adv_conf = F.softmax(adv_logits, dim=1).max(dim=1, keepdim=True)[0]
+    def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
+        # 1. REMOVE torch.no_grad()
+        # We need gradients to flow back to the adversarial patch.
+        
+        # 2. Use Softmax + Max to get a "Confidence Map"
+        # Shape: (B, 1, H, W)
+        # This map represents the model's confidence in its dominant prediction.
+        # Boundaries naturally appear as "valleys" or sharp drops in this map.
+        clean_conf = F.softmax(clean_logits, dim=1).max(dim=1, keepdim=True)[0]
+        adv_conf = F.softmax(adv_logits, dim=1).max(dim=1, keepdim=True)[0]
 
-    # 3. Sobel Filters (Same as your logic)
-    # Note: Ensure weights are not trainable (requires_grad=False)
-    kx = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
-                      device=adv_logits.device, dtype=adv_logits.dtype).view(1, 1, 3, 3)
-    ky = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], 
-                      device=adv_logits.device, dtype=adv_logits.dtype).view(1, 1, 3, 3)
-    
-    # 4. Convolve to get "Soft Edges"
-    # We detect where the confidence changes rapidly.
-    e_c = F.conv2d(clean_conf, kx, padding=1).abs() + \
-          F.conv2d(clean_conf, ky, padding=1).abs()
-          
-    e_a = F.conv2d(adv_conf, kx, padding=1).abs() + \
-          F.conv2d(adv_conf, ky, padding=1).abs()
+        # 3. Sobel Filters (Same as your logic)
+        # Note: Ensure weights are not trainable (requires_grad=False)
+        kx = torch.tensor([[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
+                        device=adv_logits.device, dtype=adv_logits.dtype).view(1, 1, 3, 3)
+        ky = torch.tensor([[-1, -2, -1], [0, 0, 0], [1, 2, 1]], 
+                        device=adv_logits.device, dtype=adv_logits.dtype).view(1, 1, 3, 3)
+        
+        # 4. Convolve to get "Soft Edges"
+        # We detect where the confidence changes rapidly.
+        e_c = F.conv2d(clean_conf, kx, padding=1).abs() + \
+            F.conv2d(clean_conf, ky, padding=1).abs()
+            
+        e_a = F.conv2d(adv_conf, kx, padding=1).abs() + \
+            F.conv2d(adv_conf, ky, padding=1).abs()
 
-    # 5. Maximize the Difference
-    # We return negative L1 because we want to MAXIMIZE the discrepancy
-    # between the clean structure and the adversarial structure.
-    return -F.l1_loss(e_a, e_c)
+        # 5. Maximize the Difference
+        # We return negative L1 because we want to MAXIMIZE the discrepancy
+        # between the clean structure and the adversarial structure.
+        return -F.l1_loss(e_a, e_c)
 
 
     def freq_shaping_loss(self, patch_3chw) -> torch.Tensor:
