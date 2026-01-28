@@ -89,7 +89,7 @@ class PatchTrainer:
         self.stage2_epochs = config.train.stage2_epochs
         self.total_epochs = self.stage1_epochs + self.stage2_epochs
         assert self.total_epochs > 0
-
+        self.stage2_loss=config.train.stage2_loss
         # ---------------- SegFormer (ViT target) ----------------
         hf_name = getattr(config.model, "hf_name",
                           "nvidia/segformer-b0-finetuned-cityscapes-1024-1024")
@@ -172,7 +172,8 @@ class PatchTrainer:
         self.r_high = getattr(
             getattr(config, "freq", object()), "r_high", 0.45)
 
-        self.metric = SegmentationMetric(config)
+        self.metric_vit = SegmentationMetric(config)
+        self.metric_surrogate = SegmentationMetric(config)
         self.log_every = config.train.log_per_iters
 
         self.apply_patch = Patch(config).apply_patch
@@ -537,14 +538,19 @@ class PatchTrainer:
         surrogate_every = int(
             getattr(self.cfg.train, "surrogate_every", 4))  # every 4th step
 
-        IoU_over_epochs = []
         H, W = self.cfg.train.height, self.cfg.train.width
-
+        saving_patches=[]
         for ep in range(start_epoch, end_epoch):
-            self.metric.reset()
+            self.metric_vit.reset()
+            # self.metric_surrogate.reset()
 
-            if(switch_epoch==ep):
-                patch1 = self.get_patch().detach().cpu()
+            if(switch_epoch == ep):
+                saving_patches.append(self.get_patch().detach().cpu())
+            if(ep == switch_epoch + self.stage2_epochs//2):
+                saving_patches.append(self.get_patch().detach().cpu())
+            if(ep == switch_epoch + 3*self.stage2_epochs//4):
+                saving_patches.append(self.get_patch().detach().cpu())
+
             use_stage1 = (ep < switch_epoch)
             stage = "Stage-1" if use_stage1 else "Stage-2(JS)"
             self.log.info(f"Epoch {ep}: using {stage}")
@@ -681,17 +687,28 @@ class PatchTrainer:
                     attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                         logits_adv, patched_label, logits_clean
                     )
-                    attack_loss_surrogate=0
+                    # attack_loss_surrogate=0
                 else:
                     # --------------------------------------------------------------------------------------------------------------------------
-                    surrogate_adv_logits=self.surrogate_forward_logits(patched_image,target_hw)
-                    surrogate_clean=self.surrogate_forward_logits(image, target_hw)
-                    attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
-                        surrogate_adv_logits, patched_label, surrogate_clean
-                    )
-                    attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
+                    attack_loss_vit = self.criterion.compute_loss_transegpgd_stage2_js(
                         logits_adv, patched_label, logits_clean
                     )
+
+                    if(self.stage2_loss=="segformer_only"):
+                        attack_loss=attack_loss_vit
+
+                    else:
+                        surrogate_adv_logits=self.surrogate_forward_logits(patched_image,target_hw)
+                        surrogate_clean=self.surrogate_forward_logits(image, target_hw)
+                        attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                                            surrogate_adv_logits, patched_label, surrogate_clean)
+                        self.metric_surrogate.update(surrogate_adv_logits, patched_label)
+                        if(self.stage2_loss=="ensemble mean"):
+                            attack_loss=(attack_loss_surrogate+attack_loss_vit)/2
+                        else:
+                            attack_loss=attack_loss_surrogate
+                    
+                    
 
 
                 # Regularizers
@@ -722,17 +739,17 @@ class PatchTrainer:
                 use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
                                (surrogate_every <= 1 or (it % surrogate_every == 0)))
                 if use_sur_now:
-                    sur_logits = self.surrogate_forward_logits(
-                        patched_image, target_size=target_hw)
-                    if sur_logits is not None:
+                    # sur_logits = self.surrogate_forward_logits(
+                    #     patched_image, target_size=target_hw)
+                    if surrogate_adv_logits is not None:
                         ga_loss = self.logit_agreement_loss(
-                            logits_adv.detach(), sur_logits)
+                            logits_adv.detach(), surrogate_adv_logits)
 
                         # Option 2: KL alignment (comment out option 1 to use this)
                         # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
                 # Total (minimize)
-                total = -(attack_loss+attack_loss_surrogate)/2 \
+                total = (-attack_loss) \
                     + self.tv_weight * tv \
                     + self.attn_w * ah_loss \
                     + self.boundary_w * b_loss \
@@ -793,13 +810,27 @@ class PatchTrainer:
                         if use_stage1:
                             attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                                 logits_adv, patched_label, logits_clean)
-                            attack_loss_surrogate=0
+
                         else:
-                            surrogate_adv_logits=self.surrogate_forward_logits(patched_image, target_hw)
-                            surrogate_clean=self.surrogate_forward_logits(image, target_hw)
-                            attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
-                            surrogate_adv_logits, patched_label, surrogate_clean)
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, logits_clean)
+                            # --------------------------------------------------------------------------------------------------------------------------
+                            attack_loss_vit = self.criterion.compute_loss_transegpgd_stage2_js(
+                                logits_adv, patched_label, logits_clean
+                            )
+
+                            if(self.stage2_loss=="segformer_only"):
+                                attack_loss=attack_loss_vit
+
+                            else:
+                                surrogate_adv_logits=self.surrogate_forward_logits(patched_image,target_hw)
+                                self.metric_surrogate.update(surrogate_adv_logits, patched_label)
+                                surrogate_clean=self.surrogate_forward_logits(image, target_hw)
+                                attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                                                    surrogate_adv_logits, patched_label, surrogate_clean)
+                                
+                                if(self.stage2_loss=="ensemble mean"):
+                                    attack_loss=(attack_loss_surrogate+attack_loss_vit)/2
+                                else:
+                                    attack_loss=attack_loss_surrogate
 
 
                         with torch.no_grad():
@@ -824,16 +855,17 @@ class PatchTrainer:
                         use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
                                        (surrogate_every <= 1 or (it % surrogate_every == 0)))
                         if use_sur_now:
-                            sur_logits = self.surrogate_forward_logits(
-                                patched_image, target_size=target_hw)
-                            if sur_logits is not None:
+                            # sur_logits = self.surrogate_forward_logits(
+                            #     patched_image, target_size=target_hw)
+                            
+                            if surrogate_adv_logits is not None:
                                 ga_loss = self.logit_agreement_loss(
-                                    logits_adv.detach(), sur_logits)
+                                    logits_adv.detach(),surrogate_adv_logits)
 
                                 # Option 2: KL alignment (comment out option 1 to use this)
                                 # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
-                        total_inner = -(attack_loss+attack_loss_surrogate)/2 \
+                        total_inner = (-attack_loss) \
                             + self.tv_weight * tv \
                             + self.attn_w * ah_loss \
                             + self.boundary_w * b_loss \
@@ -854,8 +886,9 @@ class PatchTrainer:
                             self.patch_param.copy_(torch.atanh(z))
 
                 # --- metrics / logging ---
-                self.metric.update(logits_adv, patched_label)
-                _, mIoU = self.metric.get()
+                self.metric_vit.update(logits_adv, patched_label)
+                _, mIoU = self.metric_vit.get()
+                _, mIoU_s = self.metric_surrogate.get()
                 atk_val = attack_loss.item()
                 cum_attack_loss += atk_val
                 cum_attn_loss += ah_loss.item()
@@ -869,7 +902,8 @@ class PatchTrainer:
                     # progress bar only (no per-batch metrics printed)
                     pbar.update(1)
 
-            pixAcc, meanIoU = self.metric.get()
+            pixAcc, meanIoU = self.metric_vit.get()
+            pixAcc_s, meanIoU_s= self.metric_surrogate.get()
             if pbar is not None:
                 pbar.close()
 
@@ -891,9 +925,11 @@ class PatchTrainer:
                 f"Epoch {ep}/{end_epoch} | {stage} | "
                 f"Atk:{avg_attack:.4f} | Attn:{avg_attn:.4f} | TV:{avg_tv:.4f} | "
                 f"Bound:{avg_bound:.4f} | Freq:{avg_freq:.4f} | GA:{avg_ga:.4f} | "
-                f"mIoU:{meanIoU:.4f} | pixAcc:{pixAcc:.4f} | "
+                f"ViT mIoU:{meanIoU:.4f} | pixAcc:{pixAcc:.4f} | "
+                f"SURROGATE mIoU:{meanIoU_s:.4f} | pixAcc:{pixAcc_s:.4f} | "
                 f"EpochTime:{elapsed_str} | ETA:{eta_str}"
             )
-            IoU_over_epochs.append(self.metric.get(full=True))
 
-        return self.get_patch().detach(), np.array(IoU_over_epochs), patch1
+        # contains if st1=10, st2=20 then saves at (10,20,25,30)
+        saving_patches.append(self.get_patch().detach().cpu())
+        return saving_patches

@@ -78,7 +78,7 @@ loss:
   attn_hijack_w: 1.0e-1
   boundary_w: 2.0e-1
   freq_w: 5.0e-2
-  grad_align_w: 1.0e-1    # needs surrogate to be enabled
+  grad_align_w: 5.0e-1    # needs surrogate to be enabled
 
 
 ### 5.Training 
@@ -100,12 +100,12 @@ train:
   stage1_epochs: 15        # how many epochs are “Stage 1”
   stage2_epochs: 15
   max_batches_per_epoch: 150      # was ~2975
-  max_epochs: 20                  # was 30 (you can still resume later)
+  max_epochs: 30                  # was 30 (you can still resume later)
   surrogate_every: 4              # run surrogate every 4th step only
   vit_downscale: 0.75             # feed a 0.75× resized image to SegFormer
   # finetune: False
   # finetune_add: '/content/drive/MyDrive/Colab Notebooks/1_Papers/2_RobustRealtimeSS/1_Pretraining_cityscape/1_PIDNet/experiments/pidnet_s_crop1024x1024_ExponentialLR0995_batch10_basesize2048_randscale0_5to2/checkpoints/2025-01-02 08:36:14 EST-0500_141_0.648.pth.tar'
-
+  stage2_loss: "segformer_only"  # "ensemble mean", "surrogate only"
 
 ### 6. Test
 test:
