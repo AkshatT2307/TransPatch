@@ -559,6 +559,9 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
 
         for ep in range(start_epoch, end_epoch):
             self.metric.reset()
+
+            if(switch_epoch==ep):
+                patch1 = self.get_patch().detach().cpu()
             use_stage1 = (ep < switch_epoch)
             stage = "Stage-1" if use_stage1 else "Stage-2(JS)"
             self.log.info(f"Epoch {ep}: using {stage}")
@@ -582,13 +585,6 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                 image, true_label, _, _, _ = batch
                 image = image.to(self.device)
                 true_label = true_label.to(self.device).long()
-
-                # base_patch = self.get_patch()
-                # patch = self.eot_patch(base_patch)
-
-                # patched_image, patched_label = self.apply_patch(image, true_label, patch)
-                # patched_label = patched_label.long()
-                # class P[ATCH PLACEMENT
 
                 base_patch = self.get_patch()
                 patch = self.eot_patch(base_patch)
@@ -631,6 +627,7 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
 
                         # --- choose per-image location & paste the same patch ---
 
+                    patch_locations=[]
                     for b in range(image.size(0)):
                         yx = self._choose_patch_topleft_from_mask(
                             class_mask[b], S,
@@ -644,6 +641,7 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                         else:
                             y0, x0 = yx
 
+                        patch_locations.append((y0,x0))
                         # paste the EOT patch
                         patched_imgs.append(self._paste_patch(
                             image[b:b+1], patch, y0, x0))
@@ -659,15 +657,17 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                     y0 = (Htot-self.S)//2
                     x0 = (Wtot-self.S)//2
 
+                    patch_locations=[]
                     for b in range(image.size(0)):
                         # paste the EOT patch
+
+                        patch_locations.append((y0,x0))
                         patched_imgs.append(self._paste_patch(
                             image[b:b+1], patch, y0, x0))
 
                         # (optional) mask labels under the patch to ignore supervision there
                         if self.mask_patch_labels:
-                            patched_label[b, y0:y0+S,
-                                          x0:x0+S] = self.ignore_index
+                            patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
 
                 patched_image = torch.cat(patched_imgs, dim=0)
 
@@ -698,10 +698,18 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                     attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                         logits_adv, patched_label, logits_clean
                     )
+                    attack_loss_surrogate=0
                 else:
+                    # --------------------------------------------------------------------------------------------------------------------------
+                    surrogate_adv_logits=self.surrogate_forward_logits(patched_image,target_hw)
+                    surrogate_clean=self.surrogate_forward_logits(image, target_hw)
+                    attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                        surrogate_adv_logits, patched_label, surrogate_clean
+                    )
                     attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
                         logits_adv, patched_label, logits_clean
                     )
+
 
                 # Regularizers
                 with torch.no_grad():
@@ -741,7 +749,7 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                         # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
                 # Total (minimize)
-                total = (-attack_loss) \
+                total = -(attack_loss+attack_loss_surrogate)/2 \
                     + self.tv_weight * tv \
                     + self.attn_w * ah_loss \
                     + self.boundary_w * b_loss \
@@ -765,10 +773,19 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                     for _ in range(K):
                         base_patch = self.get_patch()
                         patch = self.eot_patch(base_patch)
-                        patched_image, patched_label = self.apply_patch(
-                            image, true_label, patch)
-                        patched_label = patched_label.long()
+                        patched_imgs=[]
+                        
+                        # (optional) mask labels under the patch to ignore supervision there
+                        if self.mask_patch_labels:
+                            patched_label[b, y0:y0+S,x0:x0+S] = self.ignore_index
 
+                        for b in range(image.size(0)):
+                                # paste the EOT patch
+                            y0,x0=patch_locations[b]
+                            patched_imgs.append(self._paste_patch(image[b:b+1], patch, y0,x0))
+
+                        patched_image = torch.cat(patched_imgs, dim=0)
+                        patched_label = patched_label.long()
                         target_hw = patched_label.shape[-2:]
 
                         # --- Downscale INTO SegFormer here too ---
@@ -793,9 +810,14 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                         if use_stage1:
                             attack_loss = self.criterion.compute_loss_transegpgd_stage1(
                                 logits_adv, patched_label, logits_clean)
+                            attack_loss_surrogate=0
                         else:
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
-                                logits_adv, patched_label, logits_clean)
+                            surrogate_adv_logits=self.surrogate_forward_logits(patched_image, target_hw)
+                            surrogate_clean=self.surrogate_forward_logits(image, target_hw)
+                            attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                            surrogate_adv_logits, patched_label, surrogate_clean)
+                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, logits_clean)
+
 
                         with torch.no_grad():
                             patch_mask = self._estimate_patch_mask(
@@ -828,7 +850,7 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
                                 # Option 2: KL alignment (comment out option 1 to use this)
                                 # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
 
-                        total_inner = (-attack_loss) \
+                        total_inner = -(attack_loss+attack_loss_surrogate)/2 \
                             + self.tv_weight * tv \
                             + self.attn_w * ah_loss \
                             + self.boundary_w * b_loss \
@@ -891,4 +913,4 @@ def boundary_disruption_loss(self, clean_logits, adv_logits) -> torch.Tensor:
             )
             IoU_over_epochs.append(self.metric.get(full=True))
 
-        return self.get_patch().detach(), np.array(IoU_over_epochs)
+        return self.get_patch().detach(), np.array(IoU_over_epochs), patch1
