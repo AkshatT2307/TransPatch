@@ -739,11 +739,11 @@ class PatchTrainer:
                 use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
                                (surrogate_every <= 1 or (it % surrogate_every == 0)))
                 if use_sur_now:
-                    # sur_logits = self.surrogate_forward_logits(
-                    #     patched_image, target_size=target_hw)
-                    if surrogate_adv_logits is not None:
+                    sur_logits = self.surrogate_forward_logits(
+                        patched_image, target_size=target_hw)
+                    if sur_logits is not None:
                         ga_loss = self.logit_agreement_loss(
-                            logits_adv.detach(), surrogate_adv_logits)
+                            logits_adv.detach(), sur_logits)
 
                         # Option 2: KL alignment (comment out option 1 to use this)
                         # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
@@ -855,12 +855,12 @@ class PatchTrainer:
                         use_sur_now = (self.use_surrogate and self.grad_align_w > 0.0 and
                                        (surrogate_every <= 1 or (it % surrogate_every == 0)))
                         if use_sur_now:
-                            # sur_logits = self.surrogate_forward_logits(
-                            #     patched_image, target_size=target_hw)
+                            sur_logits = self.surrogate_forward_logits(
+                                patched_image, target_size=target_hw)
                             
-                            if surrogate_adv_logits is not None:
+                            if sur_logits is not None:
                                 ga_loss = self.logit_agreement_loss(
-                                    logits_adv.detach(),surrogate_adv_logits)
+                                    logits_adv.detach(),sur_logits)
 
                                 # Option 2: KL alignment (comment out option 1 to use this)
                                 # ga_loss = self.kl_align(logits_adv, sur_logits, T=1.0)
