@@ -108,6 +108,53 @@ class PatchLoss(nn.Module):
         return loss_weighted / total_pixels
 
     @staticmethod
+    def _kl_div_map_from_logits(pred_logits, clean_logits, eps=1e-6):
+        """
+        Returns per-pixel KL divergence: KL(softmax(clean) || softmax(pred)).
+        Shape: (N, H, W). Differentiable w.r.t. pred_logits.
+        """
+        # Target distribution (clean) and current distribution (pred)
+        p_clean = F.softmax(clean_logits, dim=1)
+        
+        # Use log_softmax for better numerical stability than torch.log(F.softmax)
+        log_p_clean = F.log_softmax(clean_logits, dim=1)
+        log_q_pred = F.log_softmax(pred_logits, dim=1)
+
+        # KL(P||Q) = P * (logP - logQ)
+        # Result shape: (N, H, W) after summing over the class dimension (dim 1)
+        kl_map = (p_clean * (log_p_clean - log_q_pred)).sum(dim=1)
+        
+        return kl_map
+    
+    def compute_loss_transegpgd_stage2_kl(self, pred, target, clean_pred):
+        """
+        Stage 2 (KL): emphasize high-transferability pixels measured by per-pixel KL(clean || pred).
+        """
+        self.calls_stage2_kl += 1
+        pred = pred.float()
+        target = target.long()
+
+        # Generate the KL map instead of JS
+        kl_map = self._kl_div_map_from_logits(pred, clean_pred)  # (N, H, W)
+        valid = (target != self.ignore_index)
+
+        # Calculate threshold (mean KL) to separate high/low transfer pixels
+        kl_mean = kl_map[valid].mean() if valid.any() else kl_map.mean()
+        
+        high_transfer_mask = (kl_map > kl_mean) & valid
+        low_transfer_mask  = (kl_map <= kl_mean) & valid
+
+        # Calculate standard Cross Entropy
+        ce = F.cross_entropy(pred, target, ignore_index=self.ignore_index, reduction='none')
+
+        # Apply the beta weighting logic
+        total = float(high_transfer_mask.sum() + low_transfer_mask.sum() + 1e-8)
+        loss_weighted = (1 - self.beta) * ce[high_transfer_mask].sum() + \
+                        self.beta       * ce[low_transfer_mask].sum()
+        
+        return loss_weighted / total
+
+
     def _js_div_map_from_logits(pred_logits, clean_logits, eps=1e-6):
         """
         Returns per-pixel Jensen–Shannon divergence between softmax(pred) and softmax(clean).

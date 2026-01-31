@@ -703,10 +703,10 @@ class PatchTrainer:
                     # --------------------------------------------------------------------------------------------------------------------------
                     surrogate_adv_logits=self.surrogate_forward_logits(patched_image,target_hw)
                     surrogate_clean=self.surrogate_forward_logits(image, target_hw)
-                    attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                    attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_kl(
                         surrogate_adv_logits, patched_label, surrogate_clean
                     )
-                    attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(
+                    attack_loss = self.criterion.compute_loss_transegpgd_stage2_kl(
                         logits_adv, patched_label, logits_clean
                     )
 
@@ -814,9 +814,9 @@ class PatchTrainer:
                         else:
                             surrogate_adv_logits=self.surrogate_forward_logits(patched_image, target_hw)
                             surrogate_clean=self.surrogate_forward_logits(image, target_hw)
-                            attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_js(
+                            attack_loss_surrogate=self.criterion.compute_loss_transegpgd_stage2_kl(
                             surrogate_adv_logits, patched_label, surrogate_clean)
-                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_js(logits_adv, patched_label, logits_clean)
+                            attack_loss = self.criterion.compute_loss_transegpgd_stage2_kl(logits_adv, patched_label, logits_clean)
 
 
                         with torch.no_grad():
