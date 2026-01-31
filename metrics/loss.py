@@ -50,7 +50,7 @@ class PatchLoss(nn.Module):
 
         self.logger = main_logger
 
-        self.calls_stage1 = self.calls_stage2_js = 0
+        self.calls_stage1 = self.calls_stage2_js = self.calls_stage2_kl= 0
 
     def set_epoch(self, epoch: int):
         """Update stage weights each epoch."""
