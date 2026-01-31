@@ -185,7 +185,7 @@ class PatchTrainer:
                            "loc", "class")
         
         if (self.loc == "class"):
-            self.class_id = getattr(config.patch, "class_id", 5)
+            self.class_id = getattr(config.patch, "class_id", (5,20))        # changed to traffic sign/traffic light
             self.class_entropy_bias = bool(getattr(
                 getattr(config, "patch", object()), "class_entropy_bias", True))
             self.class_topk_frac = float(getattr(
@@ -595,8 +595,13 @@ class PatchTrainer:
                     # --- build class mask from clean prediction ---
                     clean_pred = clean_logits.argmax(
                         dim=1)                # (B,H,W)
-                    class_mask = (
-                        clean_pred == self.class_id)       # (B,H,W)
+                    class_id0 = self.class_id[0]
+                    class_id1 = self.class_id[1]
+    
+
+                    if(self.class_id[1]>=self.num_classes):
+                        class_mask=(clean_pred==self.class_id[0]) 
+                    else: class_mask = (clean_pred == self.class_id[0]) | (clean_pred == self.class_id[1])       # (B,H,W)
 
                     # optional entropy bias on class pixels
                     ent = self._softmax_entropy(

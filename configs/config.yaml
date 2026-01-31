@@ -44,12 +44,11 @@ patch:
   size: 200
   loc: "class" # change to center if applicable
   # following metric only works if class is selected
-  class_id: 5 # pole
+  class_id: (6,7) # traffic sign and traffic light
   class_entropy_bias: True
   class_topk_frac: 0.20
   class_dilate: 5
   mask_patch_labels: True
-
 
 ### 3.Optimizer
 optimizer:
