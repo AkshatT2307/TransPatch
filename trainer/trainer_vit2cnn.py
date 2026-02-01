@@ -676,6 +676,7 @@ class PatchTrainer:
 
 
                 else: 
+                    Htot, Wtot = target_hw
                     y0=torch.randint(low=0, high=Htot-self.S, size=(1,))
                     x0=torch.randint(low=0, high=Wtot-self.S, size=(1,))
 
