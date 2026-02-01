@@ -674,6 +674,23 @@ class PatchTrainer:
                         if self.mask_patch_labels:
                             patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
 
+
+                else: 
+                    y0=torch.randint(low=0, high=Htot-self.S, size=(1,))
+                    x0=torch.randint(low=0, high=Wtot-self.S, size=(1,))
+
+                    patch_locations=[]
+                    for b in range(image.size(0)):
+                        # paste the EOT patch
+
+                        patch_locations.append((y0,x0))
+                        patched_imgs.append(self._paste_patch(
+                            image[b:b+1], patch, y0, x0))
+
+                        # (optional) mask labels under the patch to ignore supervision there
+                        if self.mask_patch_labels:
+                            patched_label[b, y0:y0+S, x0:x0+S] = self.ignore_index
+
                 patched_image = torch.cat(patched_imgs, dim=0)
 
                # --- Downscale INTO SegFormer, keep losses/metrics at label size ---
