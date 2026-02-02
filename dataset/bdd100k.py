@@ -140,6 +140,12 @@ class BDD100K(BaseDataset):
         img_list = []
         label_files = set(os.listdir(label_dir))
         
+        # Debug: show sample files
+        sample_images = images[:3] if len(images) > 0 else []
+        sample_labels = sorted(list(label_files))[:3] if len(label_files) > 0 else []
+        logging.getLogger().info(f"Sample images: {sample_images}")
+        logging.getLogger().info(f"Sample labels: {sample_labels}")
+        
         for img_name in images:
             img_base = os.path.splitext(img_name)[0]
             
@@ -174,7 +180,7 @@ class BDD100K(BaseDataset):
                     img_list.append([img_path])
                 elif len(img_list) < 3:
                     # Only warn for first few
-                    logging.getLogger().debug(f"No label found for {img_name}")
+                    logging.getLogger().info(f"No label found for image: {img_name}, tried: {possible_label_names}")
         
         logging.getLogger().debug(f"Matched {len(img_list)} image-label pairs")
         
@@ -182,7 +188,9 @@ class BDD100K(BaseDataset):
             raise ValueError(f"No valid image-label pairs found.\n"
                            f"Images: {img_dir} ({len(images)} files)\n"
                            f"Labels: {label_dir} ({len(label_files)} files)\n"
-                           f"Check label naming pattern (expected: imagename_train_id.png)")
+                           f"Sample images: {sample_images}\n"
+                           f"Sample labels: {sample_labels}\n"
+                           f"Check label naming pattern mismatch!")
         
         return img_list
     
