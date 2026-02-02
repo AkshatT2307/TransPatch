@@ -151,13 +151,14 @@ class BDD100K(BaseDataset):
             
             # Try different label naming patterns
             # BDD100K common patterns:
+            # - images: name.jpg, labels: name_train_color.png (color labels)
             # - images: name.jpg, labels: name_train_id.png (Cityscapes-style)
             # - images: name.jpg, labels: name.png (direct match)
-            # - images: name.png, labels: name.png (same extension)
             possible_label_names = [
-                f"{img_base}.png",              # Most common: image.jpg -> label.png
+                f"{img_base}_train_color.png",  # BDD100K color labels
                 f"{img_base}_train_id.png",     # Cityscapes-style
                 f"{img_base}_label.png",        # Alternative
+                f"{img_base}.png",              # Direct match
             ]
             
             label_found = False
