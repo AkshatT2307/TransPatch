@@ -22,17 +22,8 @@ model:
 
 ### 2. Dataa
 dataset:
-  name: "cityscapes"
-  root: "/kaggle/input/cityscapes-for-segmentation/Cityscapes/"
-  train: "train.txt"
-  test: "test.txt"
-  val: "val.txt"
-  trainval: "trainval.txt"
-  num_classes: 19
-
-other_dataset:
-  name: "bdd100k"
-  root: "/kaggle/input/solesensei_bdd100k/bdd100k_seg/bdd100k/seg/"
+  name: "cityscapes"      # "bdd100k"
+  root: "/kaggle/input/cityscapes-for-segmentation/Cityscapes/"      # "/kaggle/input/solesensei_bdd100k/bdd100k_seg/bdd100k/seg/"
   train: "train.txt"
   test: "test.txt"
   val: "val.txt"

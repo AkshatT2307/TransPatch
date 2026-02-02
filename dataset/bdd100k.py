@@ -136,7 +136,7 @@ class BDD100K(BaseDataset):
             raise ValueError(f"No image files (.jpg or .png) found in {img_dir}")
         
         # Match images with labels
-        # BDD100K labels typically have _train_id.png suffix
+        # BDD100K labels typically have _train_id.png suffix or same basename with .png
         img_list = []
         label_files = set(os.listdir(label_dir))
         
@@ -144,10 +144,14 @@ class BDD100K(BaseDataset):
             img_base = os.path.splitext(img_name)[0]
             
             # Try different label naming patterns
+            # BDD100K common patterns:
+            # - images: name.jpg, labels: name_train_id.png (Cityscapes-style)
+            # - images: name.jpg, labels: name.png (direct match)
+            # - images: name.png, labels: name.png (same extension)
             possible_label_names = [
-                f"{img_base}_train_id.png",
-                f"{img_base}_label.png",
-                f"{img_base}.png",
+                f"{img_base}.png",              # Most common: image.jpg -> label.png
+                f"{img_base}_train_id.png",     # Cityscapes-style
+                f"{img_base}_label.png",        # Alternative
             ]
             
             label_found = False
