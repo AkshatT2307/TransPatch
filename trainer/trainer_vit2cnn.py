@@ -7,6 +7,7 @@ from patch.create import Patch
 from metrics.loss import PatchLoss
 from metrics.performance import SegmentationMetric
 from dataset.cityscapes import Cityscapes
+from dataset.bdd100k import BDD100K
 from tqdm.auto import tqdm
 import numpy as np
 import torchvision.transforms.functional as TF
@@ -53,36 +54,70 @@ class PatchTrainer:
         self.log = main_logger
         self.device = config.experiment.device
 
+        if(config.dataset.name=="cityscapes"):
         # ---------------- Dataloaders ----------------
-        cityscape_train = Cityscapes(
-            root=config.dataset.root,
-            list_path=config.dataset.train,
-            num_classes=config.dataset.num_classes,
-            multi_scale=config.train.multi_scale,
-            flip=config.train.flip,
-            ignore_label=config.train.ignore_label,
-            base_size=config.train.base_size,
-            crop_size=(config.train.height, config.train.width),
-            scale_factor=config.train.scale_factor,
-        )
-        cityscape_val = Cityscapes(
-            root=config.dataset.root,
-            list_path=config.dataset.val,
-            num_classes=config.dataset.num_classes,
-            multi_scale=False,
-            flip=False,
-            ignore_label=config.train.ignore_label,
-            base_size=config.test.base_size,
-            crop_size=(config.test.height, config.test.width),
-        )
-        self.train_dl = torch.utils.data.DataLoader(
-            cityscape_train, batch_size=config.train.batch_size,
-            shuffle=config.train.shuffle, num_workers=config.train.num_workers,
-            pin_memory=config.train.pin_memory, drop_last=config.train.drop_last)
-        self.val_dl = torch.utils.data.DataLoader(
-            cityscape_val, batch_size=config.test.batch_size,
-            shuffle=False, num_workers=config.test.num_workers,
-            pin_memory=config.test.pin_memory, drop_last=config.test.drop_last)
+            cityscape_train = Cityscapes(
+                root=config.dataset.root,
+                list_path=config.dataset.train,
+                num_classes=config.dataset.num_classes,
+                multi_scale=config.train.multi_scale,
+                flip=config.train.flip,
+                ignore_label=config.train.ignore_label,
+                base_size=config.train.base_size,
+                crop_size=(config.train.height, config.train.width),
+                scale_factor=config.train.scale_factor,
+            )
+            cityscape_val = Cityscapes(
+                root=config.dataset.root,
+                list_path=config.dataset.val,
+                num_classes=config.dataset.num_classes,
+                multi_scale=False,
+                flip=False,
+                ignore_label=config.train.ignore_label,
+                base_size=config.test.base_size,
+                crop_size=(config.test.height, config.test.width),
+            )
+            self.train_dl = torch.utils.data.DataLoader(
+                cityscape_train, batch_size=config.train.batch_size,
+                shuffle=config.train.shuffle, num_workers=config.train.num_workers,
+                pin_memory=config.train.pin_memory, drop_last=config.train.drop_last)
+            self.val_dl = torch.utils.data.DataLoader(
+                cityscape_val, batch_size=config.test.batch_size,
+                shuffle=False, num_workers=config.test.num_workers,
+                pin_memory=config.test.pin_memory, drop_last=config.test.drop_last)
+
+        else:
+            bdd_train = BDD100K(
+                root=config.dataset.root,
+                list_path=config.dataset.train,
+                num_classes=config.dataset.num_classes,
+                multi_scale=config.train.multi_scale,
+                flip=config.train.flip,
+                ignore_label=config.train.ignore_label,
+                base_size=config.train.base_size,
+                crop_size=(config.train.height, config.train.width),
+                scale_factor=config.train.scale_factor,
+            )
+            bdd_val = BDD100K(
+                root=config.dataset.root,
+                list_path=config.dataset.val,
+                num_classes=config.dataset.num_classes,
+                multi_scale=False,
+                flip=False,
+                ignore_label=config.train.ignore_label,
+                base_size=config.test.base_size,
+                crop_size=(config.test.height, config.test.width),
+            )
+            self.train_dl = torch.utils.data.DataLoader(
+                bdd_train, batch_size=config.train.batch_size,
+                shuffle=config.train.shuffle, num_workers=config.train.num_workers,
+                pin_memory=config.train.pin_memory, drop_last=config.train.drop_last)
+            self.val_dl = torch.utils.data.DataLoader(
+                bdd_val, batch_size=config.test.batch_size,
+                shuffle=False, num_workers=config.test.num_workers,
+                pin_memory=config.test.pin_memory, drop_last=config.test.drop_last)        
+
+
 
         self.iters_per_epoch = len(self.train_dl)
         self.stage1_epochs = config.train.stage1_epochs
