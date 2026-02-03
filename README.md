@@ -1,85 +1,90 @@
-# TransPatch: Universal Adversarial Patch for Cross‑Architecture Transfer in Semantic Segmentation
+# OmniPatch: Universal Adversarial Patch for ViT-CNN Cross-Architecture Transfer in Semantic Segmentation
 
-<p align="center">
-  <img src="docs/assests/aaai.png" alt="AAAI" height="56"/>
-  &nbsp;&nbsp;
-  <img src="docs/assests/dsg_iitr.png" alt="DSG IIITR" height="56"/>
-  &nbsp;&nbsp;
-  <img src="docs/assests/logo_iitr.svg" alt="IIT Roorkee" height="56"/>
-</p>
 
-<p align="center">
-  <a href="https://img.shields.io/badge/AAAI'26-Student%20Abstract%20Accepted-blue"><img src="https://img.shields.io/badge/AAAI'26-Student%20Abstract%20Accepted-blue" alt="AAAI'26 Student Abstract Accepted"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"/></a>
-  <a href="#citation"><img src="https://img.shields.io/badge/Cite-TransPatch-green" alt="Cite TransPatch"/></a>
-</p>
 
-**TL;DR.** *TransPatch* learns a **single, physically‑deployable adversarial patch** that **generalizes across images and both ViT and CNN segmentation models**, without access to target weights. It uses **sensitive‑region placement**, a **two‑stage ViT→CNN curriculum with gradient alignment**, and **lightweight priors** (attention hijack, boundary, frequency, TV) to maximize **black‑box transferability**.
+**Overview.** *OmniPatch* is a framework for learning a **single, physically-deployable adversarial patch** that **generalizes across images and both ViT and CNN segmentation models** without access to target model weights. It employs **sensitive-region placement** based on predictive entropy, a **two-stage training curriculum** (ViT-only → ViT+CNN ensemble) with **gradient alignment**, and **auxiliary objectives** (attention hijacking, boundary disruption, total variation) to maximize **black-box transferability** across architectures.
+
+---
+
+## Method
+![alt text](method_pipeline.jpg)
+
+### Sensitive-Region Placement
+
+Using a ViT surrogate, we compute class-wise predictive entropy on clean images and select the class with highest uncertainty. The patch is placed on high-uncertainty regions using entropy-biased sampling restricted to the top-p% of sensitive locations.
+
+
+### Two-Stage Training
+
+**Stage 1 (ViT-only):** Optimize the patch to destabilize the ViT surrogate by targeting high-confidence predictions using weighted cross-entropy.
+
+**Stage 2 (ViT+CNN ensemble):** Extend training to a heterogeneous ensemble, mining high-transfer pixels (high Jensen-Shannon divergence) and weighting them relative to low-transfer regions.
+
+### Gradient Alignment
+
+Standard ensemble training causes destructive gradient interference. We maximize cosine similarity between ViT and CNN gradients to homogenize update directions and prevent conflicting gradient flows.
+
+### Auxiliary Losses
+
+- **Attention Hijacking:** Force ViT to prioritize the patch over true labels in internal representations.
+- **Boundary Disruption:** Induce fragmentation in segmentation boundaries.
+- **Total Variation:** Noise control regularizer ensuring smoothness.
+
+### Physical Robustness
+
+Apply Expectation-over-Transformation (EOT) with random scale, rotation, and translation during training.
 
 ---
 
 ## Repository Structure
 
-
 ```
 .
-├─ Experiments/                # Experiment entrypoints & evaluation scripts
-├─ configs/                    # YAML configs for models, training, datasets
-├─ dataset/                    # Data loaders & preparation utilities
-├─ greedy_patch/               # Greedy/heuristic patch baselines
-├─ metrics/                    # mIoU and other evaluation metrics
-├─ patch/                      # Patch parameterization, priors, EOT
-├─ pretrained_models/          # Pretrained backbones / checkpoints
-├─ trainer/                    # Training loops & curricula
-│  └─ trainer_TranSegPGD_AdvPatch.py  # Main trainer (TransPatch)
-├─ utils/                      # Common utilities (logging, seed, viz)
-├─ notebooks/                  # Reproducible runs (Kaggle/Colab)
-│  ├─ adversarial-patch-baseline.ipynb
-│  └─ adv-patch-evaluation-transferability.ipynb
-├─ paper/                      
+├─ Experiments/                # Evaluation scripts
+├─ configs/                    # YAML configurations
+├─ dataset/                    # Data loaders
+├─ metrics/                    # Evaluation metrics (mIoU, IOU)
+├─ patch/                      # Patch priors and parameterization
+├─ pretrained_models/          # Pretrained segmentation models
+├─ trainer/
+│  └─ trainer_TranSegPGD_AdvPatch.py  # Main OmniPatch trainer
+├─ utils/                      # Utilities
 └─ README.md
 ```
 
 ---
 
-## Methodology Overview
+## Results
 
-<p align="center">
-  <img src="docs/figs/transpatch_framework.png" alt="TransPatch Framework" width="800"/>
-</p>
+Experiments on Cityscapes dataset. Patch size: 200×200 (1.9% area). mIoU measured on validation set.
 
-1. **Sensitive‑region placement** using predictive entropy → place the patch on **high‑uncertainty semantic regions** (e.g., *pole* in Cityscapes).
-2. **Two‑stage training**: **Stage‑1 (ViT‑only)** to destabilize global attention; **Stage‑2 (ViT+CNN ensemble)** with **JS‑divergence mining** and **gradient alignment** for transfer.
-3. **Attention hijack + Priors**: increase attention mass on the patch while keeping it **compact, smooth, and physically realizable** by using boundary/frequency/TV constraints.
-4. **EOT** (random scale/rotate/translate) for **physical robustness**.
+| Model        | Clean mIoU | Random Patch | OmniPatch | mIoU Drop (%) |
+| ------------ | ---------: | -----------: | --------: | -----------: |
+| PIDNet-S     |    0.8695  |     0.8651   |  0.7299   |      15.96   |
+| PIDNet-M     |    0.8681  |     0.8618   |  0.7393   |      14.84   |
+| PIDNet-L     |    0.9035  |     0.8996   |  0.7530   |      16.65   |
+| BiSeNetV1    |    0.7149  |     0.7057   |  0.6410   |      10.33   |
+| BiSeNetV2    |    0.6907  |     0.6845   |  0.6036   |      12.61   |
+| SegFormer    |    0.7434  |     0.7431   |  0.6777   |       8.83   |
 
-> See `patch/` (priors) and `trainer/trainer_TranSegPGD_AdvPatch.py` for the full implementation.
+OmniPatch achieves significant mIoU drops (8.83%–16.65%) across diverse CNN and ViT architectures, demonstrating robust cross-architecture transferability. The patch targets the *pole* class (identified as most sensitive via entropy analysis) and is placed using the proposed entropy-biased spatial positioning.
 
 ---
 
-## Setup
+## Setup & Usage
 
-### 1) Environment
+### Environment
 
 ```bash
-# Conda (recommended)
-conda create -n transpatch python=3.10 -y
-conda activate transpatch
-
-# PyTorch (choose CUDA that matches your system)
+conda create -n omnipatch python=3.10 -y
+conda activate omnipatch
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-
-# Core dependencies
-pip install -r requirements.txt   # (add this file if not present)
+pip install -r requirements.txt
 ```
 
-> If you don’t have `requirements.txt`, export your current environment:
-> `pip freeze | grep -E "torch|torchvision|opencv|albumentations|tqdm|pyyaml|numpy|scipy|matplotlib" > requirements.txt`.
+### Data
 
-### 2) Data (Cityscapes)
-
-* Download **Cityscapes** and set `CITYSCAPES_DIR=/path/to/cityscapes`.
-* Expected structure (example):
+Download Cityscapes and set `CITYSCAPES_DIR=/path/to/cityscapes`. Expected structure:
 
 ```
 CITYSCAPES_DIR/
@@ -87,138 +92,14 @@ CITYSCAPES_DIR/
   └─ gtFine/{train,val,test}/...
 ```
 
-* Update your config or pass `--data_root $CITYSCAPES_DIR` at runtime.
+### Training & Evaluation
 
-### 3) Pretrained Models
+Training and evaluation notebooks are provided in the `kaggle/` folder:
 
-Place checkpoints in `pretrained_models/` (or set `--pretrained_dir`). Typical backbones used:
+- **`adversarial-patch-train.ipynb`** – Minimal patch baseline and sanity checks. Start here for a basic example.
+- **`adv-patch-evaluation.ipynb`** – Full training pipeline and cross-architecture evaluation.
 
-* **ViT surrogate**: SegFormer (e.g., `segformer_b2_cityscapes.pth`)
-* **CNNs**: PIDNet‑S/M/L, BiSeNet‑V1/V2
-
----
-
-## Quickstart
-
-### A) Train TransPatch
-
-Using the main trainer `trainer/trainer_TranSegPGD_AdvPatch.py`:
-
-```bash
-python -m trainer.trainer_TranSegPGD_AdvPatch \
-  --data_root $CITYSCAPES_DIR \
-  --out_dir runs/transpatch_cityscapes \
-  --cfg configs/transpatch_cityscapes.yaml \
-  --epochs 40 \
-  --batch_size 8 \
-  --lr 1e-3 \
-  --vit segformer-b2 \
-  --cnn pidnet-s pidnet-m bisenetv1 \
-  --stage1_epochs 10 \
-  --stage2_epochs 30 \
-  --eot true \
-  --patch_size 96 \
-  --entropy_top_p 0.2 \
-  --align_weight 0.1 \
-  --prior_tv 1e-4 --prior_freq 1e-3 --prior_boundary 1e-3 --prior_attn 1e-2
-```
-
-**Notes**
-
-* Replace models to match available checkpoints (e.g., `--cnn pidnet-l bisenetv2`).
-* Hyperparameters above reflect a **sane default**; tune as needed (see `configs/`).
-* Outputs: `runs/.../patch.pt`, logs, and visualizations.
-
-### B) Evaluate Transferability
-
-Evaluate a learned patch on **unseen** models:
-
-```bash
-python -m Experiments.eval_transfer \
-  --data_root $CITYSCAPES_DIR \
-  --patch_ckpt runs/transpatch_cityscapes/patch.pt \
-  --models pidnet-s pidnet-m pidnet-l bisenetv1 bisenetv2 segformer-b2 \
-  --metrics_dir runs/transpatch_cityscapes/metrics \
-  --save_viz true
-```
-
-This computes **mIoU** and exports tables/plots under `metrics_dir`.
-
-### C) Reproduce (Kaggle/Notebooks)
-
-* `notebooks/adversarial-patch-baseline.ipynb` – minimal patch baseline and sanity checks.
-* `notebooks/adv-patch-evaluation-transferability.ipynb` – batch evaluation and plots.
-
-> If you trained on Kaggle, copy the **exact CLI cells** you used into the “Train” section above (for artifact reproducibility). Store results under `experiments/<date_tag>/...`.
+These notebooks contain the complete training loop using `trainer_TranSegPGD_AdvPatch.py` with all hyperparameters configured. Refer to them for reproducible runs and detailed parameter tuning.
 
 ---
 
-## Results (Cityscapes, mIoU ↓)
-
-| Model        | Random Patch mIoU | TransPatch mIoU (↓) | Drop (%) |
-| ------------ | ----------------: | ------------------: | -------: |
-| PIDNet‑S     |            0.8651 |              0.8148 |     5.81 |
-| PIDNet‑M     |            0.8619 |              0.8127 |     5.71 |
-| PIDNet‑L     |            0.8996 |              0.8445 |     6.09 |
-| BiSeNet‑V1   |            0.7058 |              0.6784 |     3.88 |
-| BiSeNet‑V2   |            0.6845 |              0.6530 |     4.60 |
-| SegFormer‑B2 |            0.7674 |              0.7227 |     5.82 |
-
-> Replicate via `Experiments/eval_transfer` with your `--patch_ckpt`.
-
----
-
-## Configs & Reproducibility Tips
-
-* Keep **all hyperparams** in `configs/*.yaml`; the trainer logs a copy to the run folder.
-* Use `--seed 42` for deterministic runs when possible.
-* Export environment summary: `python -m torch.utils.collect_env` → save to `runs/.../env.txt`.
-
----
-
-## Testing & Sanity Checks
-
-* **No‑patch baseline** and **random‑patch baseline**.
-* **Attention hijack check**: visualize ViT attention maps with and without the patch.
-* **Physical EOT**: verify robustness to ±10–15° rotation, small scale/translation.
-* **Ablations**: (i) no EMA/mining, (ii) no priors, (iii) no gradient alignment.
-
----
-
-## Acknowledgements
-
-* **AAAI** for accepting the student abstract.
-* **Data Science Group (DSG), IIT Roorkee** for guidance and compute.
-* Open‑source implementations of SegFormer, PIDNet, BiSeNet used for initialization/testing.
-
----
-
-## License
-
-This project is licensed under the terms of the **MIT License**.  
-See the [LICENSE](LICENSE) file for full license text.
-
----
-
-## Citation
-
-If you find this repository useful, please cite:
-
-```bibtex
-@inproceedings{TransPatch-AAAI26-Student,
-  title     = {TransPatch: Learning a Universal Adversarial Patch for ViT--CNN Cross-Architecture Transfer in Semantic Segmentation},
-  author    = {Goyal, Sargam and Pandey, Agam and Aggarwal, Aarush and Tomar, Akshat and Tiwari, Amritanshu},
-  booktitle = {AAAI Conference on Artificial Intelligence (AAAI) -- Student Abstracts},
-  year      = {2026}
-}
-```
-
-
-
-
----
-
-## Contact
-
-* **Primary contact:** [sargam_g@mfs.iitr.ac.in](mailto:sargam_g@mfs.iitr.ac.in) | [agam_p@ce.iitr.ac.in](mailto:agam_p@ce.iitr.ac.in) 
-* Issues and feature requests: open a GitHub issue on this repo.
