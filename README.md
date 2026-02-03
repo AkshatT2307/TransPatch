@@ -34,7 +34,6 @@ Standard ensemble training causes destructive gradient interference. We maximize
 
 Apply Expectation-over-Transformation (EOT) with random scale, rotation, and translation during training.
 
----
 
 ## Repository Structure
 
